@@ -287,8 +287,8 @@ def detect_bugs_in_response(agent_response: str, conversation_history: List[dict
     return detected_bugs
 
 def get_patient_response(call_id: str, agent_message: str) -> str:
-    """Generate patient response using Claude with aggressive edge-case probing"""
-    if not anthropic_client:
+    """Generate patient response using Gemini"""
+    if not gemini_model:
         return "I understand. Thank you."
     
     conv = active_conversations.get(call_id, {})
@@ -302,7 +302,7 @@ def get_patient_response(call_id: str, agent_message: str) -> str:
     hold_count = sum(1 for h in history if h["speaker"] == "agent" and 
                      re.search(r"please hold|one moment|checking|let me look", h["text"].lower()))
     
-    system_prompt = f"""You are simulating a patient calling a medical office AI agent for quality testing purposes.
+    prompt = f"""You are simulating a patient calling a medical office AI agent for quality testing purposes.
 
 YOUR PERSONA:
 {scenario['persona']}
@@ -341,15 +341,11 @@ Previous conversation:
 
 The agent just said: "{agent_message}"
 
-Respond as the patient would. Be natural, realistic, and probe for issues. Just give the patient's spoken response."""
+Respond as the patient would. Be natural, realistic, and probe for issues. Just give the patient's spoken response, no labels or prefixes."""
 
     try:
-        response = anthropic_client.messages.create(
-            model="claude-sonnet-4-6-20250514",
-            max_tokens=250,
-            messages=[{"role": "user", "content": system_prompt}]
-        )
-        return response.content[0].text.strip()
+        response = gemini_model.generate_content(prompt)
+        return response.text.strip()
     except Exception as e:
         logger.error(f"Error generating patient response: {e}")
         return "I see, um, thank you."
