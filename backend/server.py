@@ -657,7 +657,7 @@ async def get_config_status():
     """Check configuration status"""
     return {
         "twilio_configured": bool(twilio_client),
-        "anthropic_configured": bool(anthropic_client),
+        "gemini_configured": bool(gemini_model),
         "target_number": TARGET_NUMBER,
         "twilio_phone": TWILIO_PHONE_NUMBER if TWILIO_PHONE_NUMBER else "Not configured"
     }
