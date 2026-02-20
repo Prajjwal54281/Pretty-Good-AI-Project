@@ -162,6 +162,8 @@ def main():
     # Basic endpoints
     tester.test_root_endpoint()
     tester.test_scenarios_endpoint()
+    tester.test_bug_patterns_endpoint()  # New test for bug patterns
+    tester.test_seeded_bug_exists()      # New test for seeded bug
     tester.test_config_status()
     tester.test_calls_endpoint()
     tester.test_bugs_endpoint()
