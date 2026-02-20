@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import "@/App.css";
 import axios from "axios";
-import { Phone, PhoneOff, Bug, FileText, Play, AlertTriangle, CheckCircle, Clock, Settings, RefreshCw, Trash2 } from "lucide-react";
+import { Phone, Bug, FileText, Play, AlertTriangle, CheckCircle, Clock, RefreshCw, Trash2, Zap, AlertCircle, Info } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -23,7 +23,8 @@ function App() {
     bug_description: "",
     severity: "medium",
     timestamp_in_call: "",
-    details: ""
+    details: "",
+    recommendation: ""
   });
 
   const fetchData = useCallback(async () => {
@@ -75,7 +76,8 @@ function App() {
         bug_description: "",
         severity: "medium",
         timestamp_in_call: "",
-        details: ""
+        details: "",
+        recommendation: ""
       });
       fetchData();
     } catch (e) {
@@ -96,10 +98,11 @@ function App() {
 
   const getSeverityColor = (severity) => {
     switch (severity) {
-      case "high": return "text-red-400 bg-red-950";
-      case "medium": return "text-yellow-400 bg-yellow-950";
-      case "low": return "text-green-400 bg-green-950";
-      default: return "text-gray-400 bg-gray-800";
+      case "critical": return "text-red-300 bg-red-950 border-red-800";
+      case "high": return "text-orange-300 bg-orange-950 border-orange-800";
+      case "medium": return "text-yellow-300 bg-yellow-950 border-yellow-800";
+      case "low": return "text-green-300 bg-green-950 border-green-800";
+      default: return "text-gray-400 bg-gray-800 border-gray-700";
     }
   };
 
@@ -111,6 +114,16 @@ function App() {
       case "failed": return "text-red-400";
       default: return "text-gray-400";
     }
+  };
+
+  const getScenarioCategory = (name) => {
+    if (name.includes("Edge Case") || name.includes("Trap") || name.includes("Probe") || name.includes("Guardrail")) {
+      return { label: "Edge Case", color: "text-purple-400 bg-purple-950" };
+    }
+    if (name.includes("Urgent") || name.includes("Human")) {
+      return { label: "Escalation", color: "text-red-400 bg-red-950" };
+    }
+    return { label: "Standard", color: "text-cyan-400 bg-cyan-950" };
   };
 
   return (
@@ -125,7 +138,7 @@ function App() {
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight">PGA Voice Bot</h1>
-                <p className="text-xs text-slate-500">Patient Simulator for AI Testing</p>
+                <p className="text-xs text-slate-500">Athena AI Agent Tester</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -154,7 +167,7 @@ function App() {
             {[
               { id: "dashboard", label: "Dashboard", icon: Phone },
               { id: "transcripts", label: "Transcripts", icon: FileText },
-              { id: "bugs", label: "Bug Reports", icon: Bug },
+              { id: "bugs", label: "Bug Reports", icon: Bug, count: bugs.length },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -168,6 +181,9 @@ function App() {
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
+                {tab.count > 0 && (
+                  <span className="px-1.5 py-0.5 text-xs bg-red-600 text-white rounded-full">{tab.count}</span>
+                )}
               </button>
             ))}
           </div>
@@ -182,11 +198,11 @@ function App() {
             <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <Phone className="w-5 h-5 text-cyan-400" />
-                Initiate Test Call
+                Initiate Test Call to Athena
               </h2>
               <div className="grid md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-sm text-slate-400 mb-2">Select Patient Scenario</label>
+                  <label className="block text-sm text-slate-400 mb-2">Select Test Scenario</label>
                   <select
                     data-testid="scenario-select"
                     value={selectedScenario}
@@ -222,22 +238,28 @@ function App() {
 
             {/* Scenario Cards */}
             <div>
-              <h2 className="text-lg font-semibold mb-4">Available Test Scenarios</h2>
+              <h2 className="text-lg font-semibold mb-4">Test Scenarios ({scenarios.length})</h2>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {scenarios.map((scenario, i) => (
-                  <div
-                    key={i}
-                    data-testid={`scenario-card-${i}`}
-                    onClick={() => setSelectedScenario(scenario.name)}
-                    className={`bg-slate-900 border rounded-xl p-4 cursor-pointer transition-all hover:border-cyan-600 ${
-                      selectedScenario === scenario.name ? "border-cyan-500 ring-1 ring-cyan-500/20" : "border-slate-800"
-                    }`}
-                  >
-                    <h3 className="font-medium text-slate-100 mb-1">{scenario.name}</h3>
-                    <p className="text-sm text-slate-400 mb-2">{scenario.persona}</p>
-                    <p className="text-xs text-slate-500">Goal: {scenario.goal}</p>
-                  </div>
-                ))}
+                {scenarios.map((scenario, i) => {
+                  const category = getScenarioCategory(scenario.name);
+                  return (
+                    <div
+                      key={i}
+                      data-testid={`scenario-card-${i}`}
+                      onClick={() => setSelectedScenario(scenario.name)}
+                      className={`bg-slate-900 border rounded-xl p-4 cursor-pointer transition-all hover:border-cyan-600 ${
+                        selectedScenario === scenario.name ? "border-cyan-500 ring-1 ring-cyan-500/20" : "border-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-medium text-slate-100 text-sm">{scenario.name}</h3>
+                        <span className={`px-2 py-0.5 rounded text-xs ${category.color}`}>{category.label}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mb-2">{scenario.persona}</p>
+                      <p className="text-xs text-slate-500">Goal: {scenario.goal}</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -251,6 +273,7 @@ function App() {
                       <th className="text-left px-4 py-3 text-sm font-medium text-slate-400">Scenario</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-slate-400">Status</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-slate-400">Duration</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-slate-400">Auto Bugs</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-slate-400">Time</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-slate-400">Actions</th>
                     </tr>
@@ -258,7 +281,7 @@ function App() {
                   <tbody className="divide-y divide-slate-800">
                     {calls.length === 0 ? (
                       <tr>
-                        <td colSpan="5" className="px-4 py-8 text-center text-slate-500">
+                        <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
                           No calls yet. Start a test call above.
                         </td>
                       </tr>
@@ -271,6 +294,16 @@ function App() {
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-400">
                             {call.duration_seconds ? `${call.duration_seconds}s` : "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {(call.auto_detected_bugs?.length > 0) ? (
+                              <span className="flex items-center gap-1 text-red-400">
+                                <Zap className="w-3 h-3" />
+                                {call.auto_detected_bugs.length}
+                              </span>
+                            ) : (
+                              <span className="text-slate-600">-</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-500">
                             {new Date(call.started_at).toLocaleString()}
@@ -332,12 +365,12 @@ function App() {
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-yellow-950 rounded-lg">
-                    <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                  <div className="p-2 bg-orange-950 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-orange-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{bugs.filter(b => b.severity === 'high').length}</p>
-                    <p className="text-xs text-slate-500">High Severity</p>
+                    <p className="text-2xl font-bold">{bugs.filter(b => b.severity === 'critical' || b.severity === 'high').length}</p>
+                    <p className="text-xs text-slate-500">Critical/High</p>
                   </div>
                 </div>
               </div>
@@ -363,7 +396,15 @@ function App() {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-medium text-sm truncate">{call.scenario_name}</span>
-                      <span className={`text-xs ${getStatusColor(call.status)}`}>{call.status}</span>
+                      <div className="flex items-center gap-2">
+                        {call.auto_detected_bugs?.length > 0 && (
+                          <span className="text-red-400 text-xs flex items-center gap-1">
+                            <Zap className="w-3 h-3" />
+                            {call.auto_detected_bugs.length}
+                          </span>
+                        )}
+                        <span className={`text-xs ${getStatusColor(call.status)}`}>{call.status}</span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-500">
                       <Clock className="w-3 h-3" />
@@ -384,11 +425,35 @@ function App() {
               {selectedCall ? (
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
                   <div className="mb-4 pb-4 border-b border-slate-800">
-                    <h3 className="font-medium">{selectedCall.scenario_name}</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">{selectedCall.scenario_name}</h3>
+                      {selectedCall.auto_detected_bugs?.length > 0 && (
+                        <span className="px-2 py-1 bg-red-950 text-red-400 text-xs rounded flex items-center gap-1">
+                          <Zap className="w-3 h-3" />
+                          {selectedCall.auto_detected_bugs.length} auto-detected issues
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-slate-400">{selectedCall.persona}</p>
                     <p className="text-xs text-slate-500">Goal: {selectedCall.goal}</p>
                   </div>
-                  <div className="space-y-3 max-h-[calc(100vh-400px)] overflow-y-auto">
+                  
+                  {/* Auto-detected bugs alert */}
+                  {selectedCall.auto_detected_bugs?.length > 0 && (
+                    <div className="mb-4 p-3 bg-red-950/30 border border-red-900/50 rounded-lg">
+                      <h4 className="text-sm font-medium text-red-400 flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        Auto-Detected Issues
+                      </h4>
+                      <ul className="space-y-1">
+                        {selectedCall.auto_detected_bugs.map((bug, i) => (
+                          <li key={i} className="text-xs text-red-300">• {bug.name}: {bug.description}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-3 max-h-[calc(100vh-500px)] overflow-y-auto">
                     {selectedCall.transcript && selectedCall.transcript.length > 0 ? (
                       selectedCall.transcript.map((entry, i) => (
                         <div
@@ -403,7 +468,7 @@ function App() {
                           <span className={`text-xs font-medium ${
                             entry.speaker === "patient" ? "text-cyan-400" : "text-slate-400"
                           }`}>
-                            {entry.speaker === "patient" ? "Patient (Bot)" : "Agent (AI)"}
+                            {entry.speaker === "patient" ? "Patient (Bot)" : "Athena Agent"}
                           </span>
                           <p className="text-sm mt-1">{entry.text}</p>
                         </div>
@@ -454,6 +519,7 @@ function App() {
                     required
                   >
                     <option value="">Select a call...</option>
+                    <option value="manual-testing">Manual Testing (No Call)</option>
                     {calls.map((call) => (
                       <option key={call.id} value={call.id}>
                         {call.scenario_name} - {new Date(call.started_at).toLocaleDateString()}
@@ -462,7 +528,7 @@ function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Bug Description</label>
+                  <label className="block text-sm text-slate-400 mb-2">Bug Title</label>
                   <input
                     data-testid="bug-description-input"
                     type="text"
@@ -482,6 +548,7 @@ function App() {
                       onChange={(e) => setBugForm({ ...bugForm, severity: e.target.value })}
                       className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     >
+                      <option value="critical">Critical</option>
                       <option value="high">High</option>
                       <option value="medium">Medium</option>
                       <option value="low">Low</option>
@@ -511,6 +578,17 @@ function App() {
                     required
                   />
                 </div>
+                <div>
+                  <label className="block text-sm text-slate-400 mb-2">Recommendation (Optional)</label>
+                  <textarea
+                    data-testid="bug-recommendation-input"
+                    value={bugForm.recommendation}
+                    onChange={(e) => setBugForm({ ...bugForm, recommendation: e.target.value })}
+                    placeholder="Suggested fix or improvement..."
+                    rows={2}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none"
+                  />
+                </div>
                 <button
                   data-testid="submit-bug-btn"
                   type="submit"
@@ -524,7 +602,14 @@ function App() {
 
             {/* Bug List */}
             <div>
-              <h2 className="text-lg font-semibold mb-4">Reported Bugs ({bugs.length})</h2>
+              <h2 className="text-lg font-semibold mb-4">
+                Bug Reports ({bugs.length})
+                {bugs.filter(b => b.auto_detected).length > 0 && (
+                  <span className="text-sm font-normal text-slate-500 ml-2">
+                    ({bugs.filter(b => b.auto_detected).length} auto-detected)
+                  </span>
+                )}
+              </h2>
               <div className="space-y-3 max-h-[calc(100vh-250px)] overflow-y-auto">
                 {bugs.length === 0 ? (
                   <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
@@ -539,9 +624,17 @@ function App() {
                       className="bg-slate-900 border border-slate-800 rounded-xl p-4"
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${getSeverityColor(bug.severity)}`}>
-                          {bug.severity.toUpperCase()}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-1 rounded text-xs font-medium border ${getSeverityColor(bug.severity)}`}>
+                            {bug.severity.toUpperCase()}
+                          </span>
+                          {bug.auto_detected && (
+                            <span className="px-2 py-1 rounded text-xs font-medium bg-purple-950 text-purple-400 flex items-center gap-1">
+                              <Zap className="w-3 h-3" />
+                              Auto
+                            </span>
+                          )}
+                        </div>
                         <button
                           data-testid={`delete-bug-${bug.id}`}
                           onClick={() => deleteBug(bug.id)}
@@ -550,11 +643,17 @@ function App() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                      <h3 className="font-medium mb-1">{bug.bug_description}</h3>
-                      <p className="text-sm text-slate-400 mb-2">{bug.details}</p>
-                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                      <h3 className="font-medium mb-2">{bug.bug_description}</h3>
+                      <p className="text-sm text-slate-400 mb-2 whitespace-pre-wrap">{bug.details}</p>
+                      {bug.recommendation && (
+                        <div className="mt-2 p-2 bg-slate-800/50 rounded text-xs text-slate-300">
+                          <span className="text-emerald-400 font-medium">Recommendation:</span> {bug.recommendation}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-4 text-xs text-slate-500 mt-3">
                         {bug.timestamp_in_call && <span>@ {bug.timestamp_in_call}</span>}
                         <span>{new Date(bug.created_at).toLocaleDateString()}</span>
+                        <span className="text-slate-600">Call: {bug.call_id?.substring(0, 8)}...</span>
                       </div>
                     </div>
                   ))
@@ -568,7 +667,7 @@ function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-900/30 mt-auto">
         <div className="max-w-7xl mx-auto px-6 py-4 text-center text-xs text-slate-500">
-          Pretty Good AI Engineering Challenge - Voice Bot Patient Simulator
+          Pretty Good AI Engineering Challenge - Athena Voice Bot Tester | Target: +1-805-439-8008
         </div>
       </footer>
     </div>
