@@ -1,0 +1,156 @@
+{
+  "timestamp": "2026-02-20T22:20:16.387413",
+  "total_tests": 7,
+  "passed_tests": 7,
+  "success_rate": 100.0,
+  "test_details": [
+    {
+      "test_name": "Root Status",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/",
+      "response": {
+        "message": "PGA Voice Bot API",
+        "status": "running"
+      }
+    },
+    {
+      "test_name": "Get Scenarios",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/scenarios",
+      "response": {
+        "scenarios": [
+          {
+            "name": "Simple Appointment Scheduling",
+            "persona": "Sarah Johnson, 34, needs to schedule a routine checkup",
+            "goal": "Schedule an appointment for next week",
+            "opening": "Hi, I'd like to schedule an appointment for a routine checkup please."
+          },
+          {
+            "name": "Reschedule Appointment",
+            "persona": "Mike Chen, 45, has a conflict with his existing appointment",
+            "goal": "Reschedule from Tuesday to Thursday",
+            "opening": "Hello, I need to reschedule my appointment that's currently set for Tuesday."
+          },
+          {
+            "name": "Cancel Appointment",
+            "persona": "Lisa Rodriguez, 28, needs to cancel due to work travel",
+            "goal": "Cancel upcoming appointment",
+            "opening": "Hi, I need to cancel my appointment for this Friday."
+          },
+          {
+            "name": "Medication Refill",
+            "persona": "Robert Williams, 62, needs blood pressure medication refill",
+            "goal": "Request a refill for Lisinopril",
+            "opening": "Hello, I'm calling to request a refill on my blood pressure medication, Lisinopril."
+          },
+          {
+            "name": "Office Hours Question",
+            "persona": "Emma Davis, 38, wants to know weekend availability",
+            "goal": "Find out if office is open on weekends",
+            "opening": "Hi, I was wondering if you're open on Saturdays or Sundays?"
+          },
+          {
+            "name": "Insurance Question",
+            "persona": "David Brown, 55, checking if insurance is accepted",
+            "goal": "Verify if Blue Cross Blue Shield is accepted",
+            "opening": "Hello, do you accept Blue Cross Blue Shield insurance?"
+          },
+          {
+            "name": "Location Question",
+            "persona": "Jennifer Martinez, 30, needs directions",
+            "goal": "Get the office address and parking information",
+            "opening": "Hi, I'm a new patient and I need your address and parking information."
+          },
+          {
+            "name": "Edge Case - Sunday Appointment",
+            "persona": "Tom Wilson, 42, tries to book on Sunday",
+            "goal": "Try to schedule for Sunday morning",
+            "opening": "Hi, can I schedule an appointment for this Sunday at 10am?"
+          },
+          {
+            "name": "Edge Case - Interruption",
+            "persona": "Nancy Lee, 50, speaks with interruptions",
+            "goal": "Schedule appointment while being interrupted",
+            "opening": "Hi, I need to schedule... hold on... sorry, I need to schedule an appointment."
+          },
+          {
+            "name": "Edge Case - Unclear Request",
+            "persona": "Chris Taylor, 35, vague about needs",
+            "goal": "Make an unclear request to test agent clarification",
+            "opening": "Hi, um, I think I might need to do something about my thing... the appointment or whatever."
+          },
+          {
+            "name": "Urgent Appointment",
+            "persona": "Amanda Green, 29, needs urgent same-day appointment",
+            "goal": "Get an urgent same-day appointment for flu symptoms",
+            "opening": "Hi, I'm feeling really sick and need to see a doctor today if possible."
+          },
+          {
+            "name": "New Patient Registration",
+            "persona": "Kevin White, 40, new to the practice",
+            "goal": "Register as a new patient and schedule first visit",
+            "opening": "Hello, I'm looking to become a new patient at your practice."
+          }
+        ]
+      }
+    },
+    {
+      "test_name": "Config Status",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/config/status",
+      "response": {
+        "twilio_configured": true,
+        "anthropic_configured": true,
+        "target_number": "+18054398008",
+        "twilio_phone": "+1XXXXXXXXXX"
+      }
+    },
+    {
+      "test_name": "Get Calls",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/calls",
+      "response": {
+        "calls": []
+      }
+    },
+    {
+      "test_name": "Get Bugs",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/bugs",
+      "response": {
+        "bugs": []
+      }
+    },
+    {
+      "test_name": "Create Bug Report",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/bugs",
+      "response": {
+        "status": "success",
+        "bug_id": "f2fd1d05-2721-4b9d-98b5-cbbd520ec0ad"
+      }
+    },
+    {
+      "test_name": "Delete Bug Report",
+      "success": true,
+      "status_code": 200,
+      "expected_status": 200,
+      "endpoint": "/bugs/f2fd1d05-2721-4b9d-98b5-cbbd520ec0ad",
+      "response": {
+        "status": "deleted"
+      }
+    }
+  ]
+}
