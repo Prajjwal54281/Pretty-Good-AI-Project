@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
-import anthropic
+import google.generativeai as genai
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
