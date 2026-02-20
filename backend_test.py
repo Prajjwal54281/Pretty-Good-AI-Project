@@ -77,6 +77,38 @@ class VoiceBotAPITester:
                 print(f"   ✅ Correct number of scenarios (12)")
             else:
                 print(f"   ⚠️  Expected 12 scenarios, got {len(scenarios)}")
+            
+            # Check for probing_instructions in scenarios
+            has_probing = all('probing_instructions' in s for s in scenarios)
+            if has_probing:
+                print(f"   ✅ All scenarios have probing_instructions")
+            else:
+                print(f"   ⚠️  Some scenarios missing probing_instructions")
+                
+        return success, response
+
+    def test_bug_patterns_endpoint(self):
+        """Test GET /bug-patterns endpoint"""
+        success, response = self.run_test("Get Bug Patterns", "GET", "/bug-patterns", 200)
+        if success:
+            patterns = response.get('patterns', [])
+            print(f"   Found {len(patterns)} bug patterns")
+            if len(patterns) == 5:
+                print(f"   ✅ Correct number of bug patterns (5)")
+            else:
+                print(f"   ⚠️  Expected 5 bug patterns, got {len(patterns)}")
+        return success, response
+
+    def test_seeded_bug_exists(self):
+        """Test if seeded bug exists in database"""
+        success, response = self.run_test("Get Bugs for Seeded Check", "GET", "/bugs", 200)
+        if success:
+            bugs = response.get('bugs', [])
+            seeded_bug = any(bug.get('bug_description') == "Infinite loading loop when checking multiple doctor availability" for bug in bugs)
+            if seeded_bug:
+                print(f"   ✅ Seeded bug found in database")
+            else:
+                print(f"   ⚠️  Seeded bug not found - should exist on startup")
         return success, response
 
     def test_config_status(self):
