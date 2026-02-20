@@ -58,7 +58,7 @@ Build a voice bot for Pretty Good AI's engineering challenge that calls +1-805-4
 
 ## Environment Variables Required
 - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
-- ANTHROPIC_API_KEY
+- GEMINI_API_KEY
 - BACKEND_URL (for webhooks)
 
 ## Next Tasks / Backlog
