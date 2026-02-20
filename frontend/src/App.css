@@ -4,7 +4,16 @@
 [data-testid="emergent-branding"],
 .emergent-branding,
 a[href*="emergent"],
-div[class*="emergent"] {
+div[class*="emergent"],
+div[style*="position: fixed"][style*="bottom"],
+body > div:last-child:not(#root) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Target the specific branding element */
+div[style*="Made with"] {
   display: none !important;
 }
 
