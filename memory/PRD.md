@@ -4,10 +4,10 @@
 Build a voice bot for Pretty Good AI's engineering challenge that calls +1-805-439-8008 and simulates patient conversations to test the Athena AI medical office agent. Requires Twilio for calls, Claude for dialogue generation, MongoDB for transcripts, and a React dashboard.
 
 ## Architecture
-- **Backend**: FastAPI with Twilio voice integration and Claude claude-sonnet-4-6 for patient dialogue
+- **Backend**: FastAPI with Twilio voice integration and Google Gemini (gemini-1.5-flash) for patient dialogue
 - **Frontend**: React dashboard with tabs for calls, transcripts, and bug reporting
 - **Database**: MongoDB for storing calls, transcripts, and bug reports
-- **Voice Flow**: Twilio outbound call → TwiML with Gather/Say → Claude generates patient responses
+- **Voice Flow**: Twilio outbound call → TwiML with Gather/Say → Gemini generates patient responses
 - **Bug Detection**: Automatic pattern matching for common issues (hold loops, weekend bookings, missing tickets)
 
 ## User Personas
