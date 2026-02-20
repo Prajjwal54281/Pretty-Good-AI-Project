@@ -18,7 +18,7 @@ Build a voice bot for Pretty Good AI's engineering challenge that calls +1-805-4
 - [x] `/api/call` endpoint to trigger outbound calls to test number
 - [x] `/api/voice/respond` webhook for Twilio voice handling
 - [x] 12 patient scenarios (edge cases, escalations, standard flows)
-- [x] Claude claude-sonnet-4-6 for realistic patient dialogue with natural hesitations
+- [x] Google Gemini (gemini-1.5-flash) for realistic patient dialogue with natural hesitations
 - [x] MongoDB storage for calls and transcripts
 - [x] Bug reporting system with severity levels + recommendations
 - [x] React dashboard with 3 tabs (Dashboard, Transcripts, Bugs)
