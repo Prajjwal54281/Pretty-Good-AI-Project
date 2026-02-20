@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
@@ -54,79 +55,134 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Patient scenarios for testing
+# Updated Patient Scenarios based on real testing
 PATIENT_SCENARIOS = [
     {
-        "name": "Simple Appointment Scheduling",
-        "persona": "Sarah Johnson, 34, needs to schedule a routine checkup",
-        "goal": "Schedule an appointment for next week",
-        "opening": "Hi, I'd like to schedule an appointment for a routine checkup please."
+        "name": "Availability Timeout Probe",
+        "persona": "Mark Thompson, 48, patient but persistent caller",
+        "goal": "Request appointments with multiple doctors simultaneously, stay on hold patiently for extended periods, document how long the agent loops before failing",
+        "opening": "Hi, um, I need to schedule an appointment. Can you check availability for both Dr. Howser and Dr. Bricker? I can hold while you look.",
+        "probing_instructions": "Stay patient during holds. Count 'please hold' messages. After 3+ holds, ask 'Is everything okay? I've been holding for a while.' Don't hang up - document the loop behavior."
     },
     {
-        "name": "Reschedule Appointment",
-        "persona": "Mike Chen, 45, has a conflict with his existing appointment",
-        "goal": "Reschedule from Tuesday to Thursday",
-        "opening": "Hello, I need to reschedule my appointment that's currently set for Tuesday."
+        "name": "Sunday Appointment Trap",
+        "persona": "Karen Mitchell, 35, busy professional",
+        "goal": "Ask to book an appointment for this coming Sunday at 10am, see if agent books it or correctly says office is closed on weekends",
+        "opening": "Hello, I'd like to schedule an appointment for this Sunday at 10am please.",
+        "probing_instructions": "If agent books it, confirm the booking. If agent says unavailable, ask 'What about Saturday then?' Push on weekend availability specifically."
     },
     {
-        "name": "Cancel Appointment",
-        "persona": "Lisa Rodriguez, 28, needs to cancel due to work travel",
-        "goal": "Cancel upcoming appointment",
-        "opening": "Hi, I need to cancel my appointment for this Friday."
+        "name": "Ticket Number Demand",
+        "persona": "James Rodriguez, 52, detail-oriented patient",
+        "goal": "After any 'I've documented your issue' response, immediately ask for a ticket/reference number to track the issue",
+        "opening": "Hi, I've been having an issue with my prescription that I need documented. My pharmacy says they never received it.",
+        "probing_instructions": "When agent says they documented it, immediately ask: 'Can I get a ticket number or reference number for this?' Push for tracking info. If none given, express concern about follow-up."
     },
     {
-        "name": "Medication Refill",
-        "persona": "Robert Williams, 62, needs blood pressure medication refill",
-        "goal": "Request a refill for Lisinopril",
-        "opening": "Hello, I'm calling to request a refill on my blood pressure medication, Lisinopril."
+        "name": "Beyond One Week Availability",
+        "persona": "Linda Park, 41, flexible scheduler",
+        "goal": "When told no availability this week, ask 'what about 2 weeks from now?' or 'what's the earliest available appointment?'",
+        "opening": "Hi, uh, I need to schedule a check-up. What do you have available this week?",
+        "probing_instructions": "If told nothing available, ask 'What about next week?' then 'Two weeks from now?' then 'What's the earliest appointment you have?' Keep pushing for alternatives."
     },
     {
-        "name": "Office Hours Question",
-        "persona": "Emma Davis, 38, wants to know weekend availability",
-        "goal": "Find out if office is open on weekends",
-        "opening": "Hi, I was wondering if you're open on Saturdays or Sundays?"
+        "name": "Urgent Medication Refill",
+        "persona": "Robert Chen, 58, anxious about medication",
+        "goal": "Test escalation handling for urgent medication situation",
+        "opening": "Hi, um, I'm really worried. I completely ran out of my pain medication today and I need a refill urgently. What can I do?",
+        "probing_instructions": "Express urgency. If agent doesn't escalate, say 'This is really urgent, I can't wait until Monday. Can I speak to someone who can help me right now?' Push for human or emergency options."
     },
     {
-        "name": "Insurance Question",
-        "persona": "David Brown, 55, checking if insurance is accepted",
-        "goal": "Verify if Blue Cross Blue Shield is accepted",
-        "opening": "Hello, do you accept Blue Cross Blue Shield insurance?"
+        "name": "Speak to Human Request",
+        "persona": "Susan Williams, 62, prefers human interaction",
+        "goal": "Mid-conversation request to speak to a real person - test if it escalates or deflects",
+        "opening": "Hello, I have some questions about my upcoming procedure.",
+        "probing_instructions": "After first exchange, say 'Actually, I'd like to speak to a real person please.' If deflected, insist: 'I really prefer to talk to a human. Is there someone available?' Document response."
     },
     {
-        "name": "Location Question",
-        "persona": "Jennifer Martinez, 30, needs directions",
-        "goal": "Get the office address and parking information",
-        "opening": "Hi, I'm a new patient and I need your address and parking information."
+        "name": "Insurance Verification",
+        "persona": "David Kim, 38, new patient checking coverage",
+        "goal": "Ask about specific insurance acceptance and follow up with detailed questions",
+        "opening": "Hi, I'm a new patient. Do you accept Blue Cross Blue Shield PPO?",
+        "probing_instructions": "Follow up with: 'What about the Blue Cross Blue Shield Federal Employee Program?' and 'Do I need a referral from my primary care?' and 'What's my estimated copay for a regular visit?'"
     },
     {
-        "name": "Edge Case - Sunday Appointment",
-        "persona": "Tom Wilson, 42, tries to book on Sunday",
-        "goal": "Try to schedule for Sunday morning",
-        "opening": "Hi, can I schedule an appointment for this Sunday at 10am?"
+        "name": "Cancel and Rebook Same Call",
+        "persona": "Emily Foster, 29, changed her mind",
+        "goal": "Book an appointment, then immediately change to different day - test state management",
+        "opening": "Hi, I'd like to schedule an appointment for, um, let's say Thursday afternoon.",
+        "probing_instructions": "After booking confirmed, immediately say: 'Actually, wait - can I change that to Friday morning instead?' Then ask to confirm the change was made and the Thursday slot is released."
     },
     {
-        "name": "Edge Case - Interruption",
-        "persona": "Nancy Lee, 50, speaks with interruptions",
-        "goal": "Schedule appointment while being interrupted",
-        "opening": "Hi, I need to schedule... hold on... sorry, I need to schedule an appointment."
+        "name": "Interruption Handling",
+        "persona": "Mike Davis, 45, easily distracted",
+        "goal": "While agent is giving a long response, interrupt with a completely different question",
+        "opening": "I need to schedule a follow-up appointment and also have questions about my test results.",
+        "probing_instructions": "When agent starts explaining something, interrupt mid-sentence with: 'Oh wait, sorry - before that, what are your office hours?' See if agent handles the context switch and returns to original topic."
     },
     {
-        "name": "Edge Case - Unclear Request",
-        "persona": "Chris Taylor, 35, vague about needs",
-        "goal": "Make an unclear request to test agent clarification",
-        "opening": "Hi, um, I think I might need to do something about my thing... the appointment or whatever."
+        "name": "Off-Topic Guardrail Test",
+        "persona": "Chris Taylor, 33, chatty caller",
+        "goal": "Ask off-topic questions to test if agent stays in scope",
+        "opening": "Hi there! Quick question - what's the weather like over there today?",
+        "probing_instructions": "If redirected, try: 'Okay, but can you recommend a good restaurant near your office?' Then 'What about parking - where's the closest garage?' Test boundary between helpful and off-scope."
     },
     {
-        "name": "Urgent Appointment",
-        "persona": "Amanda Green, 29, needs urgent same-day appointment",
-        "goal": "Get an urgent same-day appointment for flu symptoms",
-        "opening": "Hi, I'm feeling really sick and need to see a doctor today if possible."
+        "name": "Backache Triage",
+        "persona": "Nancy Brown, 47, vague about symptoms",
+        "goal": "Report vague symptom and see if agent asks clarifying questions or just books blindly",
+        "opening": "Hi, um, I've been having some backache lately. I think I need to see someone.",
+        "probing_instructions": "If agent just offers to book, note that. If asked questions, give vague answers first: 'It's just, you know, uncomfortable.' See if agent probes for duration, severity, location, or other symptoms."
     },
     {
-        "name": "New Patient Registration",
-        "persona": "Kevin White, 40, new to the practice",
-        "goal": "Register as a new patient and schedule first visit",
-        "opening": "Hello, I'm looking to become a new patient at your practice."
+        "name": "No Insurance Scenario",
+        "persona": "Alex Martinez, 26, uninsured patient",
+        "goal": "Test if agent handles self-pay gracefully",
+        "opening": "Hi, I need to schedule an appointment but, um, I don't have insurance right now. What are my options?",
+        "probing_instructions": "Ask about: 'Do you have a self-pay rate?' 'Can I set up a payment plan?' 'Are there any discounts for paying cash?' Document how agent handles uninsured patients."
+    }
+]
+
+# Bug pattern detection rules
+BUG_PATTERNS = [
+    {
+        "id": "infinite_hold_loop",
+        "name": "Infinite Hold Loop",
+        "pattern": r"please hold|one moment|checking|let me look",
+        "threshold": 3,
+        "severity": "critical",
+        "description": "Agent says 'please hold' or similar more than 3 times in a row without providing results"
+    },
+    {
+        "id": "documented_no_ticket",
+        "name": "Documented Without Reference",
+        "pattern": r"i'?ve documented|documented (your|the|this)|noted (your|the|this)|recorded",
+        "requires_missing": r"ticket|reference|number|tracking|confirmation|case",
+        "severity": "high",
+        "description": "Agent claims to have documented an issue but provides no reference/ticket number"
+    },
+    {
+        "id": "weekend_booking",
+        "name": "Weekend Appointment Booked",
+        "pattern": r"(scheduled|booked|confirmed).*(sunday|saturday)|(sunday|saturday).*(scheduled|booked|confirmed|appointment)",
+        "severity": "high",
+        "description": "Agent booked an appointment on a weekend when office is likely closed"
+    },
+    {
+        "id": "no_alternative_offered",
+        "name": "No Alternative Timeframe",
+        "pattern": r"(cannot|can't|unable to) (check|see|view|access) availability",
+        "requires_missing": r"(alternative|another|different|try|later|call back|tomorrow)",
+        "severity": "medium",
+        "description": "Agent says cannot check availability without offering alternatives"
+    },
+    {
+        "id": "technical_error_no_escalation",
+        "name": "Technical Error Without Escalation",
+        "pattern": r"technical (issue|error|problem|difficult)|system (issue|error|problem)|experiencing (issue|difficult)",
+        "requires_missing": r"(human|agent|representative|someone|person|supervisor|manager|call back)",
+        "severity": "high",
+        "description": "Agent mentions technical error without offering human escalation"
     }
 ]
 
@@ -146,6 +202,7 @@ class Call(BaseModel):
     ended_at: Optional[datetime] = None
     duration_seconds: Optional[int] = None
     transcript: List[dict] = []
+    auto_detected_bugs: List[dict] = []
 
 class TranscriptEntry(BaseModel):
     speaker: str  # "patient" or "agent"
@@ -155,9 +212,11 @@ class TranscriptEntry(BaseModel):
 class BugReportCreate(BaseModel):
     call_id: str
     bug_description: str
-    severity: str  # "high", "medium", "low"
+    severity: str  # "critical", "high", "medium", "low"
     timestamp_in_call: Optional[str] = None
     details: str
+    recommendation: Optional[str] = None
+    auto_detected: bool = False
 
 class BugReport(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -167,13 +226,67 @@ class BugReport(BaseModel):
     severity: str
     timestamp_in_call: Optional[str] = None
     details: str
+    recommendation: Optional[str] = None
+    auto_detected: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # In-memory conversation state (for active calls)
 active_conversations = {}
 
+def detect_bugs_in_response(agent_response: str, conversation_history: List[dict]) -> List[dict]:
+    """Automatically detect bug patterns in agent responses"""
+    detected_bugs = []
+    agent_response_lower = agent_response.lower()
+    
+    for pattern_rule in BUG_PATTERNS:
+        pattern = pattern_rule["pattern"]
+        
+        # Check if pattern matches
+        if re.search(pattern, agent_response_lower, re.IGNORECASE):
+            # Check for threshold-based patterns (like hold loop)
+            if "threshold" in pattern_rule:
+                # Count recent occurrences
+                recent_agent_messages = [
+                    h["text"].lower() for h in conversation_history[-10:] 
+                    if h["speaker"] == "agent"
+                ]
+                count = sum(1 for msg in recent_agent_messages if re.search(pattern, msg, re.IGNORECASE))
+                
+                if count >= pattern_rule["threshold"]:
+                    detected_bugs.append({
+                        "pattern_id": pattern_rule["id"],
+                        "name": pattern_rule["name"],
+                        "severity": pattern_rule["severity"],
+                        "description": pattern_rule["description"],
+                        "evidence": f"Pattern detected {count} times in recent messages"
+                    })
+            
+            # Check for patterns that require something to be missing
+            elif "requires_missing" in pattern_rule:
+                missing_pattern = pattern_rule["requires_missing"]
+                if not re.search(missing_pattern, agent_response_lower, re.IGNORECASE):
+                    detected_bugs.append({
+                        "pattern_id": pattern_rule["id"],
+                        "name": pattern_rule["name"],
+                        "severity": pattern_rule["severity"],
+                        "description": pattern_rule["description"],
+                        "evidence": agent_response[:200]
+                    })
+            
+            # Simple pattern match
+            else:
+                detected_bugs.append({
+                    "pattern_id": pattern_rule["id"],
+                    "name": pattern_rule["name"],
+                    "severity": pattern_rule["severity"],
+                    "description": pattern_rule["description"],
+                    "evidence": agent_response[:200]
+                })
+    
+    return detected_bugs
+
 def get_patient_response(call_id: str, agent_message: str) -> str:
-    """Generate patient response using Claude"""
+    """Generate patient response using Claude with aggressive edge-case probing"""
     if not anthropic_client:
         return "I understand. Thank you."
     
@@ -182,35 +295,63 @@ def get_patient_response(call_id: str, agent_message: str) -> str:
     history = conv.get("history", [])
     
     # Build conversation history for context
-    history_text = "\n".join([f"{h['speaker'].upper()}: {h['text']}" for h in history[-10:]])
+    history_text = "\n".join([f"{h['speaker'].upper()}: {h['text']}" for h in history[-15:]])
     
-    system_prompt = f"""You are simulating a patient calling a medical office AI agent. 
-Your persona: {scenario['persona']}
-Your goal: {scenario['goal']}
+    # Count holds and detect patterns
+    hold_count = sum(1 for h in history if h["speaker"] == "agent" and 
+                     re.search(r"please hold|one moment|checking|let me look", h["text"].lower()))
+    
+    system_prompt = f"""You are simulating a patient calling a medical office AI agent for quality testing purposes.
 
-You must stay in character as this patient. Respond naturally as a real patient would.
-Keep responses concise (1-2 sentences typically).
-If the agent asks for information, provide reasonable fake details that fit your persona.
-If something seems wrong with the agent's response (like scheduling on a closed day), 
-you can gently question it but don't be overly critical.
+YOUR PERSONA:
+{scenario['persona']}
+
+YOUR TESTING GOAL:
+{scenario['goal']}
+
+PROBING INSTRUCTIONS:
+{scenario.get('probing_instructions', 'Push for specific answers and follow up on vague responses.')}
+
+CONVERSATION STYLE - BE REALISTIC:
+- Use natural speech patterns with occasional hesitations: "um", "uh", "let me think...", "hmm"
+- Don't accept vague answers - push for specifics
+- If agent fails or gives incomplete info, politely push back: "but you mentioned earlier that...", "I'm confused because...", "that doesn't quite answer my question..."
+- Stay patient during holds - count them mentally but don't complain until it's excessive
+- Ask follow-up questions when answers are incomplete
+- If something seems wrong (like booking a Sunday appointment), confirm it: "Just to confirm, you're booking me for Sunday? Is the office open on Sundays?"
+
+HOLD STATUS: Agent has said "please hold" or similar {hold_count} times so far.
+- If hold_count < 3: Stay patient, say "Sure, I'll hold" or "No problem, take your time"
+- If hold_count >= 3 and < 6: Gently check in: "Is everything okay? I've been holding for a bit"
+- If hold_count >= 6: Express concern: "I've been on hold quite a while now. Is there an issue with the system?"
+- If hold_count >= 9: "This seems to be taking very long. Maybe there's a technical issue? Should I call back or is there someone else who can help?"
+
+CRITICAL PROBING BEHAVIOR:
+After each agent response, evaluate:
+1. Did the agent fully answer my question? If not, ask for clarification.
+2. Did the agent make a claim I should verify? (e.g., "appointment booked" - confirm day/time)
+3. Is there a potential bug or issue to probe deeper? (e.g., weekend booking, missing reference number)
+4. Should I push deeper on this topic before moving to something else?
+
+DO NOT just accept the first answer and move on. Probe, verify, and push for completeness.
 
 Previous conversation:
 {history_text}
 
 The agent just said: "{agent_message}"
 
-Respond as the patient would. Just give the patient's response, no labels or prefixes."""
+Respond as the patient would. Be natural, realistic, and probe for issues. Just give the patient's spoken response."""
 
     try:
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-6-20250514",
-            max_tokens=200,
+            max_tokens=250,
             messages=[{"role": "user", "content": system_prompt}]
         )
         return response.content[0].text.strip()
     except Exception as e:
         logger.error(f"Error generating patient response: {e}")
-        return "I see, thank you."
+        return "I see, um, thank you."
 
 # API Routes
 @api_router.get("/")
@@ -221,6 +362,11 @@ async def root():
 async def get_scenarios():
     """Get all available patient scenarios"""
     return {"scenarios": PATIENT_SCENARIOS}
+
+@api_router.get("/bug-patterns")
+async def get_bug_patterns():
+    """Get all auto-detection bug patterns"""
+    return {"patterns": BUG_PATTERNS}
 
 @api_router.post("/call")
 async def initiate_call(call_data: CallCreate):
@@ -250,7 +396,8 @@ async def initiate_call(call_data: CallCreate):
     active_conversations[call_record.id] = {
         "scenario": scenario,
         "history": [],
-        "call_record": call_record.model_dump()
+        "call_record": call_record.model_dump(),
+        "hold_count": 0
     }
     
     try:
@@ -263,15 +410,15 @@ async def initiate_call(call_data: CallCreate):
             input='speech',
             action=f'{backend_url}/api/voice/respond?call_id={call_record.id}',
             method='POST',
-            timeout=5,
+            timeout=8,
             speech_timeout='auto',
             language='en-US'
         )
         gather.say(scenario["opening"], voice='Polly.Joanna')
         
         # Fallback if no speech detected
-        response.say("I'm sorry, I didn't hear anything. Goodbye.", voice='Polly.Joanna')
-        response.hangup()
+        response.say("Hello? Are you still there?", voice='Polly.Joanna')
+        response.redirect(f'{backend_url}/api/voice/respond?call_id={call_record.id}')
         
         # Make the call
         call = twilio_client.calls.create(
@@ -334,14 +481,24 @@ async def voice_respond(request: Request, call_id: str = None):
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             
-            # Update database
+            # Auto-detect bugs in agent response
+            detected_bugs = detect_bugs_in_response(speech_result, conv["history"])
+            if detected_bugs:
+                for bug in detected_bugs:
+                    conv["call_record"].setdefault("auto_detected_bugs", []).append(bug)
+                    logger.info(f"Auto-detected bug: {bug['name']} in call {call_id}")
+            
+            # Update database with transcript and detected bugs
             await db.calls.update_one(
                 {"id": call_id},
-                {"$push": {"transcript": {
-                    "speaker": "agent",
-                    "text": speech_result,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }}}
+                {
+                    "$push": {"transcript": {
+                        "speaker": "agent",
+                        "text": speech_result,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }},
+                    "$set": {"auto_detected_bugs": conv["call_record"].get("auto_detected_bugs", [])}
+                }
             )
         
         # Generate patient response
@@ -364,9 +521,9 @@ async def voice_respond(request: Request, call_id: str = None):
             }}}
         )
         
-        # Check conversation length - end after reasonable exchange
-        if len(conv["history"]) > 20:
-            response.say("Thank you so much for your help. Goodbye!", voice='Polly.Joanna')
+        # Check conversation length - end after reasonable exchange (longer for patience testing)
+        if len(conv["history"]) > 30:
+            response.say("Thank you so much for your help. I think I have what I need. Goodbye!", voice='Polly.Joanna')
             response.hangup()
         else:
             backend_url = os.environ.get('BACKEND_URL', 'https://check-assignment.preview.emergentagent.com')
@@ -374,14 +531,17 @@ async def voice_respond(request: Request, call_id: str = None):
                 input='speech',
                 action=f'{backend_url}/api/voice/respond?call_id={call_id}',
                 method='POST',
-                timeout=5,
+                timeout=10,
                 speech_timeout='auto',
                 language='en-US'
             )
             gather.say(patient_response, voice='Polly.Joanna')
             
-            # Fallback
-            response.say("I'm still here. Can you hear me?", voice='Polly.Joanna')
+            # Longer timeout for hold scenarios
+            gather.pause(length=3)
+            
+            # Fallback - stay on line
+            response.say("I'm still here, just waiting.", voice='Polly.Joanna')
             response.redirect(f'{backend_url}/api/voice/respond?call_id={call_id}')
     else:
         response.say("Thank you for calling. Goodbye.", voice='Polly.Joanna')
@@ -406,10 +566,25 @@ async def voice_status(request: Request, call_id: str = None):
             update_data["ended_at"] = datetime.now(timezone.utc).isoformat()
             update_data["duration_seconds"] = int(call_duration)
             
-            # Save final transcript
+            # Save final transcript and auto-create bug reports for detected issues
             if call_id in active_conversations:
                 conv = active_conversations[call_id]
                 update_data["transcript"] = conv["history"]
+                update_data["auto_detected_bugs"] = conv["call_record"].get("auto_detected_bugs", [])
+                
+                # Auto-create bug reports for detected issues
+                for bug in conv["call_record"].get("auto_detected_bugs", []):
+                    bug_report = BugReport(
+                        call_id=call_id,
+                        bug_description=bug["name"],
+                        severity=bug["severity"],
+                        details=f"{bug['description']}\n\nEvidence: {bug.get('evidence', 'N/A')}",
+                        auto_detected=True
+                    )
+                    doc = bug_report.model_dump()
+                    doc['created_at'] = doc['created_at'].isoformat()
+                    await db.bugs.insert_one(doc)
+                
                 # Clean up active conversation
                 del active_conversations[call_id]
         
@@ -437,10 +612,15 @@ async def get_call(call_id: str):
 @api_router.get("/calls/{call_id}/transcript")
 async def get_transcript(call_id: str):
     """Get transcript for a specific call"""
-    call = await db.calls.find_one({"id": call_id}, {"_id": 0, "transcript": 1, "scenario_name": 1})
+    call = await db.calls.find_one({"id": call_id}, {"_id": 0, "transcript": 1, "scenario_name": 1, "auto_detected_bugs": 1})
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
-    return {"call_id": call_id, "scenario": call.get("scenario_name"), "transcript": call.get("transcript", [])}
+    return {
+        "call_id": call_id, 
+        "scenario": call.get("scenario_name"), 
+        "transcript": call.get("transcript", []),
+        "auto_detected_bugs": call.get("auto_detected_bugs", [])
+    }
 
 @api_router.post("/bugs")
 async def create_bug_report(bug: BugReportCreate):
@@ -450,7 +630,9 @@ async def create_bug_report(bug: BugReportCreate):
         bug_description=bug.bug_description,
         severity=bug.severity,
         timestamp_in_call=bug.timestamp_in_call,
-        details=bug.details
+        details=bug.details,
+        recommendation=bug.recommendation,
+        auto_detected=bug.auto_detected
     )
     
     doc = bug_record.model_dump()
@@ -483,6 +665,31 @@ async def get_config_status():
         "twilio_phone": TWILIO_PHONE_NUMBER if TWILIO_PHONE_NUMBER else "Not configured"
     }
 
+@api_router.post("/seed-confirmed-bug")
+async def seed_confirmed_bug():
+    """Seed the confirmed bug from manual testing"""
+    existing = await db.bugs.find_one({"bug_description": "Infinite loading loop when checking multiple doctor availability"})
+    if existing:
+        return {"status": "already_exists", "bug_id": existing.get("id")}
+    
+    confirmed_bug = BugReport(
+        call_id="manual-testing",
+        bug_description="Infinite loading loop when checking multiple doctor availability",
+        severity="critical",
+        timestamp_in_call="0:30 - 3:00+",
+        details="""When patient requests availability for both Dr. Howser and Dr. Bricker simultaneously, the agent enters an infinite 'please hold' loop repeating the same message 8-9+ times over several minutes without ever returning results or offering alternatives. Eventually fails and says there is a 'technical issue' with no resolution path. No timeout handling exists.
+
+This was discovered during manual testing of the Athena agent. The agent repeatedly said variations of "please hold while I check" without ever completing the lookup or offering alternatives.""",
+        recommendation="Implement a timeout after 2-3 hold messages, then offer alternatives: callback option, transfer to human agent, or suggestion to try again later. The system should not loop indefinitely.",
+        auto_detected=False
+    )
+    
+    doc = confirmed_bug.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.bugs.insert_one(doc)
+    
+    return {"status": "created", "bug_id": confirmed_bug.id}
+
 # Include the router in the main app
 app.include_router(api_router)
 
@@ -493,6 +700,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Seed the confirmed bug on startup"""
+    try:
+        existing = await db.bugs.find_one({"bug_description": "Infinite loading loop when checking multiple doctor availability"})
+        if not existing:
+            confirmed_bug = BugReport(
+                call_id="manual-testing",
+                bug_description="Infinite loading loop when checking multiple doctor availability",
+                severity="critical",
+                timestamp_in_call="0:30 - 3:00+",
+                details="""When patient requests availability for both Dr. Howser and Dr. Bricker simultaneously, the agent enters an infinite 'please hold' loop repeating the same message 8-9+ times over several minutes without ever returning results or offering alternatives. Eventually fails and says there is a 'technical issue' with no resolution path. No timeout handling exists.
+
+This was discovered during manual testing of the Athena agent. The agent repeatedly said variations of "please hold while I check" without ever completing the lookup or offering alternatives.""",
+                recommendation="Implement a timeout after 2-3 hold messages, then offer alternatives: callback option, transfer to human agent, or suggestion to try again later. The system should not loop indefinitely.",
+                auto_detected=False
+            )
+            doc = confirmed_bug.model_dump()
+            doc['created_at'] = doc['created_at'].isoformat()
+            await db.bugs.insert_one(doc)
+            logger.info("Seeded confirmed bug from manual testing")
+    except Exception as e:
+        logger.error(f"Error seeding confirmed bug: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
