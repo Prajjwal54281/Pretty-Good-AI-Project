@@ -145,8 +145,8 @@ function App() {
               <span className={`px-3 py-1 rounded-full text-xs font-medium ${configStatus?.twilio_configured ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
                 Twilio: {configStatus?.twilio_configured ? 'Ready' : 'Not Configured'}
               </span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${configStatus?.anthropic_configured ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
-                Claude: {configStatus?.anthropic_configured ? 'Ready' : 'Not Configured'}
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${configStatus?.gemini_configured ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
+                Gemini: {configStatus?.gemini_configured ? 'Ready' : 'Not Configured'}
               </span>
               <button 
                 onClick={fetchData}
