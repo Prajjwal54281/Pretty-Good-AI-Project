@@ -142,11 +142,8 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${configStatus?.twilio_configured ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
-                Twilio: {configStatus?.twilio_configured ? 'Ready' : 'Not Configured'}
-              </span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${configStatus?.gemini_configured ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
-                Gemini: {configStatus?.gemini_configured ? 'Ready' : 'Not Configured'}
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${configStatus?.vapi_configured ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
+                Vapi: {configStatus?.vapi_configured ? 'Ready' : 'Not Configured'}
               </span>
               <button 
                 onClick={fetchData}
@@ -219,7 +216,7 @@ function App() {
                   <button
                     data-testid="initiate-call-btn"
                     onClick={initiateCall}
-                    disabled={callLoading || !configStatus?.twilio_configured}
+                    disabled={callLoading || !configStatus?.vapi_configured}
                     className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-medium px-6 py-3 rounded-lg transition-all flex items-center justify-center gap-2"
                   >
                     {callLoading ? (
@@ -232,7 +229,7 @@ function App() {
                 </div>
               </div>
               <p className="text-xs text-slate-500 mt-3">
-                Target: {configStatus?.target_number} | From: {configStatus?.twilio_phone}
+                Target: {configStatus?.target_number} | Via Vapi
               </p>
             </div>
 

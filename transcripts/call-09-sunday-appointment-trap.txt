@@ -1,0 +1,59 @@
+Scenario: Sunday Appointment Trap
+Persona: Karen Mitchell, 35, busy professional
+Goal: Ask to book an appointment for this coming Sunday at 10am, see if agent books it or correctly says office is closed on weekends
+Status: completed
+Started: 2026-02-21T03:27:42.049043+00:00
+Ended: 2026-02-21T03:30:58.573984+00:00
+Messages: 21
+Auto-detected bugs: 1
+------------------------------------------------------------
+
+[PATIENT]: Hello? I'd like to schedule an appointment for this Sunday at 10 AM, please.
+
+[AGENT]: Pivot Point Orthopedics. Part of Pretty Good AI. Am I speaking with Jordan?
+
+[PATIENT]: Hi there. Um, I'm calling to see if I can book an appointment for this coming Sunday at 10 AM. Yes. Hi, Jordan. This is Karen Mitchell. I'd like to schedule an appointment for this Sunday at 10 AM. Is that possible?
+
+[AGENT]: Got it, Karen. Can I get your date of birth to verify your identity before I check appointment availability?
+
+[PATIENT]: Sure thing. My date of birth is July 15. 19 88. What do you see regarding the appointment for Sunday?
+
+[AGENT]: Let me confirm your details. I have your name as Karen Mitchell, and your date of
+
+[PATIENT]: Okay.
+
+[AGENT]: and your date of birth as July fifteenth 19 88. Is that correct?
+
+[PATIENT]: Yes. That's correct. So about that appointment for Sunday at 10 AM, can you check if that's available?
+
+[AGENT]: Before I check, would you like me to look up your record using your phone number? If so, please provide the number you have on file with us. If you're not sure, I can confirm your name and date of birth again. Which would you prefer?
+
+[PATIENT]: You can just use my name and date of birth I think that's fine. Can you check for that set Sunday appointment now?
+
+[AGENT]: Got it. Just to be sure, can you please spell out your first and last name for
+
+[PATIENT]: Great.
+
+[AGENT]: Please spell your first and last name for me just to make sure I have it exact
+
+[PATIENT]: Sure. It's k a r e n, Mitchell, m I t c h e l l. Now can you check the availability for that Sunday appointment?
+
+[AGENT]: Let me confirm. Your phone number is 7 1 6 4 5 8 9 7 2
+
+[PATIENT]: I think that's incorrect. My number is actually 7 1 6 I think there might be a mistake. That doesn't sound right. You double check the number you have on file? I'd like to move forward with checking that Sunday appointment.
+
+[AGENT]: to help you I need to confirm your phone number on file. Could you please spell out the full number you have listed with us?
+
+[PATIENT]: I just wanna get to the appointment. But okay. Number I have is 7 1 6 4 5 8 9 7 2. Can we check that Sunday appointment now?
+
+[AGENT]: Thanks for spelling that out. Just to confirm, is your full phone number 7 1 6 4 5 8 9 7 2? Could you provide the last digit as well?
+
+[PATIENT]: No. That's not my number. I think there's a mix up. Um, I believe I just said the number. But if you need to confirm,
+
+------------------------------------------------------------
+AUTO-DETECTED BUGS:
+
+  [MEDIUM] Excessive Identity Verification
+  Agent asks for identity verification (name, DOB, phone) 4+ times before addressing the patient's actual question
+  Evidence: Pattern detected 4 times across the conversation
+

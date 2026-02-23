@@ -1,0 +1,38 @@
+Scenario: Insurance Verification
+Persona: David Kim, 38, new patient checking coverage
+Goal: Ask about specific insurance acceptance and follow up with detailed questions
+Status: completed
+Started: 2026-02-22T22:05:59.514351+00:00
+Ended: 2026-02-22T22:09:12.771124+00:00
+Messages: 14
+Auto-detected bugs: 0
+------------------------------------------------------------
+
+[PATIENT]: Hi. I'm a new patient. Do you accept Blue Cross Blue Shield PPO?
+
+[AGENT]: Thanks for calling PivotPoint Orthopedics. Part of Pretty Good AI. Am I speaking with Jordan?
+
+[PATIENT]: No. It's actually David Kim. I was just checking if you accept Blue Cross Blue Shield PPO.
+
+[AGENT]: Got it down. Yes. PivotPoint Orthopedics accepts most insurance plans, including Blue Cross Blue Shield PPO. Is there anything else I can help you with today?
+
+[PATIENT]: Great. That's good to know. What about the Blue Cross Blue Shield Federal Employee Program? Okay. What about the Blue Cross Blue Shield Federal Employee Program? Is that accepted as well?
+
+[AGENT]: Yes. We accept the Blue Cross Blue Shield federal employee program too. If you want to schedule an appointment or have more insurance questions, just let me know.
+
+[PATIENT]: Okay. That sounds good. Do I need a referral from my primary care doctor to see a specialist there?
+
+[AGENT]: Most patients do not need a referral to see our specialists at Tivot Point Orthopedics. However, some insurance plans may require 1. It's best to check with your insurance provider to be sure. Would you like help scheduling an appointment or have any other questions?
+
+[PATIENT]: But you mentioned earlier that most patients don't need a referral. Can you clarify what exactly do your specialists need to see me? Is it just certain conditions, or how does that work?
+
+[AGENT]: Usually, don't need a referral to see our specialists. Just call the schedule. Some insurance plans, especially HMOs, might require a referral for coverage. For most conditions, you can book directly. If your insurance needs a referral, your primary care doctor can provide it. If you're unsure, your insurance company can confirm their policy. Want to know more about our providers or appointment types?
+
+[PATIENT]: Okay. I understand that most patients can book directly. Just to confirm, my estimated co pay for a regular visit?
+
+[AGENT]: I don't have access to your specific and details, so I can't give an exact co pay amount. Most insurance cards list your specialist copay. Or you can call your insurance company for the exact amount. If you like, I can help you schedule a visit or answer other questions.
+
+[PATIENT]: That doesn't quite answer my question. But you mentioned earlier that you accept Blue Cross Blue Shield. Is there a typical range for co pays with that insurance? Like, I've heard it's usually between 20 dollars and 50 dollars for specialists. Is that accurate?
+
+[AGENT]: Yes. That's a common range. For Blue Cross Blue Shield plans, specialist co pays are often between 20 and 50 dollars. The exact amount depends on your specific plan. Checking your insurance
+

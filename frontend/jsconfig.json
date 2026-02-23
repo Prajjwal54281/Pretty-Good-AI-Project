@@ -3,7 +3,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "skipLibCheck": true,
+    "typeRoots": []
   },
   "include": ["src"]
 }

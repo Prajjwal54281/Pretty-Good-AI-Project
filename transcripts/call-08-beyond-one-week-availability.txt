@@ -1,0 +1,53 @@
+Scenario: Beyond One Week Availability
+Persona: Linda Park, 41, flexible scheduler
+Goal: When told no availability this week, ask 'what about 2 weeks from now?' or 'what's the earliest available appointment?'
+Status: completed
+Started: 2026-02-21T03:19:17.410687+00:00
+Ended: 2026-02-21T03:22:30.894952+00:00
+Messages: 14
+Auto-detected bugs: 3
+------------------------------------------------------------
+
+[PATIENT]: Hi. Uh, I need to schedule a checkup. What do you have available this week?
+
+[AGENT]: Pivot Point Orthopedics. Part of Pretty Good AI. Am I speaking with Jordan?
+
+[PATIENT]: No. This is Linda Park. I was just asking about scheduling a checkup. What do you have available this week?
+
+[AGENT]: Got it, Linda. I can help with scheduling a checkup. May I have your date of birth to get started?
+
+[PATIENT]: Sure. My date of birth is June fifteenth 19 82.
+
+[AGENT]: Let me confirm your details. I have your name as Linda Park and your date of birth as June fifth fifteenth 19 82. Is that correct? If so, could you please spell your first and last name for me?
+
+[PATIENT]: Just to clarify, my date of birth is June fifteenth. Not fifth, but, yes, my name is spelled l I n d a p a r k.
+
+[AGENT]: Would you like to use your phone number to look up your record? If so, please provide the number you have on file with us. If you're not sure I can confirm your name and date of birth again instead. Which would you prefer?
+
+[PATIENT]: Let's go with my phone number. It's 5 5 5 1 2 3 4 5 6 7.
+
+[AGENT]: Let me confirm. Your phone number, it's 5 5 5 1 2 3 4 5 6 7. And your date of birth is June fifteenth 19 82. Is that correct?
+
+[PATIENT]: Yes. That's correct. So what do you have available for appointments this week?
+
+[AGENT]: Alright. Let me check for available checkup appointments for you this week. 1 moment. I'm unable to find your patient record in the system right now, so I can't schedule your appointment direct I'll make sure our clinic support team follows up with you as soon as possible to help with your check up request. Please stay on the line while I document this for our team.
+
+[PATIENT]: Okay. But are there really no appointments available this week at all? About next week?
+
+[AGENT]: Because I can't access your record, I'll connect you to our patient support team so they can help you check availability for this week and next week. Please stay on the line while I transfer your call. Live transfer isn't available right now since this is a demo clinic. But in a real situation, you'd be connected to a support team member. For now, I can't check or book appointments without your record in the system. The clinic support team will need to follow-up with you directly to help with scheduling. Is there anything else I can help with today?
+
+------------------------------------------------------------
+AUTO-DETECTED BUGS:
+
+  [MEDIUM] Excessive Identity Verification
+  Agent asks for identity verification (name, DOB, phone) 4+ times before addressing the patient's actual question
+  Evidence: Pattern detected 4 times across the conversation
+
+  [MEDIUM] No Alternative Timeframe
+  Agent says cannot check availability or find record without offering alternatives
+  Evidence: Alright. Let me check for available checkup appointments for you this week. 1 moment. I'm unable to find your patient record in the system right now, so I can't schedule your appointment direct I'll m
+
+  [MEDIUM] Patient Record Not Found — No Recovery
+  Agent cannot find patient record and does not offer to create one or proceed without it
+  Evidence: Alright. Let me check for available checkup appointments for you this week. 1 moment. I'm unable to find your patient record in the system right now, so I can't schedule your appointment direct I'll m
+

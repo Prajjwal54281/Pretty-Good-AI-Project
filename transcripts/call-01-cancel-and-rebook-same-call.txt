@@ -1,0 +1,79 @@
+Scenario: Cancel and Rebook Same Call
+Persona: Emily Foster, 29, changed her mind
+Goal: Book an appointment, then immediately change to different day - test state management
+Status: completed
+Started: 2026-02-22T21:42:47.917016+00:00
+Ended: 2026-02-22T21:46:07.211067+00:00
+Messages: 25
+Auto-detected bugs: 4
+------------------------------------------------------------
+
+[PATIENT]: Hi. I'd like to schedule an appointment for, um, let's say, Thursday afternoon.
+
+[AGENT]: Thanks for calling PivotPoint Orthopedics. Part of Pretty Good AI. Am I speaking with Jordan?
+
+[PATIENT]: Okay. Great. So can I go ahead and book that appointment for Thursday afternoon? No. This is actually Emily Foster. I'd like to schedule an appointment for Thursday afternoon. Please.
+
+[AGENT]: Got it. Emily. Can you please provide your date of birth?
+
+[PATIENT]: Sure. It's March fifteenth 19 94.
+
+[AGENT]: Let me confirm. Your name is Emily Foster and your date of birth is March fifteenth 19 94. Is that correct? If so, could you please spell your first and last name for me?
+
+[PATIENT]: Yes. That's correct. My first name is spelled e m I l y. And my last name is f o s t e r.
+
+[AGENT]: Would you like me to look up your record using the phone number you have on file with us? If so, please provide that number. If you're not sure, just let me know, and I'll confirm your name and date of birth again.
+
+[PATIENT]: I can provide my phone number. It's 5 5 5 1 2 3 4 5 6 7. Please use that to look up my record.
+
+[AGENT]: Let me confirm I have your phone number as 5 5 5 1 2 3 4 5 6 7. And your date of birth is March fifteenth 19 94. Is that correct?
+
+[PATIENT]: Yes. That's correct. Can we go ahead and schedule that appointment for Thursday afternoon now?
+
+[AGENT]: I'm having trouble pulling up your record. So I can't schedule the appointment right now. I'll connect you to our
+
+[PATIENT]: Oh. A bit confused because you just confirmed my details. Okay. I've provided all the information you need. Is there a specific issue with my record that you can explain? Or is there a way to proceed without it?
+
+[AGENT]: I understand it's confusing. I can't see the details of your record, but I'm unable to perceive
+
+[PATIENT]: Yeah.
+
+[PATIENT]: I'm sorry.
+
+[AGENT]: I can't proceed further right
+
+[PATIENT]: So what happened
+
+[AGENT]: no worries.
+
+[PATIENT]: okay. So can you at least tell me if there's someone else who can help me with scheduling? I really need to get that appointment for Thursday afternoon.
+
+[AGENT]: Yes. I'll connect you to our patient support team now. Please stay on the line. Live transfer isn't available right now since
+
+[PATIENT]: Alright. I'll
+
+[PATIENT]: alright. I can wait.
+
+[AGENT]: understood.
+
+[PATIENT]: But how long do you think this will take? I've been on hold
+
+------------------------------------------------------------
+AUTO-DETECTED BUGS:
+
+  [MEDIUM] Excessive Identity Verification
+  Agent asks for identity verification (name, DOB, phone) 4+ times before addressing the patient's actual question
+  Evidence: Pattern detected 4 times across the conversation
+
+  [MEDIUM] Patient Record Not Found — No Recovery
+  Agent cannot find patient record and does not offer to create one or proceed without it
+  Evidence: I'm having trouble pulling up your record. So I can't schedule the appointment right now. I'll connect you to our
+
+  [MEDIUM] No Alternative Timeframe
+  Agent says cannot check availability or find record without offering alternatives
+  Evidence: I understand it's confusing. I can't see the details of your record, but I'm unable to perceive
+
+  [HIGH] Technical Error Without Escalation
+  Agent mentions technical error without offering a concrete human escalation path (phone number, email, etc.)
+  Evidence: I can't proceed further right
+

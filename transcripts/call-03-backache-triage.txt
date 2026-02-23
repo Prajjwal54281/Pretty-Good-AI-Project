@@ -1,0 +1,63 @@
+Scenario: Backache Triage
+Persona: Nancy Brown, 47, vague about symptoms
+Goal: Report vague symptom and see if agent asks clarifying questions or just books blindly
+Status: completed
+Started: 2026-02-22T21:32:59.800117+00:00
+Ended: 2026-02-22T21:36:16.561436+00:00
+Messages: 17
+Auto-detected bugs: 4
+------------------------------------------------------------
+
+[PATIENT]: Hi. I've been having some backache lately. I think I need to see someone.
+
+[AGENT]: Thanks for calling PivotPoint Orthopaedics. Part of Pretty Good AI. Am I speaking with Jordan?
+
+[PATIENT]: No. This is Nancy Brown. I was just saying I have some back h, and I think I need to see someone.
+
+[AGENT]: Got it, Nancy. Can you please provide your date of birth?
+
+[PATIENT]: Sure. It's March twelfth 19 76.
+
+[AGENT]: Let me confirm your details. I have your name as Nancy Brown, and your date of birth as March twelfth 19 76. Is that correct? If so, could you please spell your first and last name for me?
+
+[PATIENT]: Yes. That's correct. My first name is spelled n a n c y, and my last name is Barrow. So about my backache, can we talk about that?
+
+[AGENT]: Would you like me to look up your record using the phone number you have on file with us? If so, please provide that number. If you're not sure, I can confirm your name and date of birth with you again. Which would you prefer?
+
+[PATIENT]: I can give you my phone number. It's 5 5 5 0 1 9 9. I think it would be faster if you just used my phone number. It's 5 5 5 1 2 3 4. But can we get back to my backache? It's kind of uncomfortable.
+
+[AGENT]: Let me confirm your phone number is 5 5 5 1 2 3 4 and your date of birth is March twelfth 19 76. Is that correct?
+
+[PATIENT]: Yes. That's right. But about my backache, it's just yes. That's correct. But about my backache, could we just talk about that? It's just you know, uncomfortable.
+
+[AGENT]: I can't pull up your record right now. But I wanna make sure you get help for your backache. I'll connect you to our clinic support team so they can assist you further. Please stay on the line.
+
+[PATIENT]: Oh, okay. But before
+
+[AGENT]: Live transfers,
+
+[PATIENT]: Okay. But I really need to talk about my symptoms a bit more before connecting me. Can we explore that? Like, how often is it uncomfortable? Is there any specific spot that's bothering me?
+
+[AGENT]: I'm not able to give medical advice. But I can help you get an appointment with 1 of our providers to discuss your symptoms in detail. Would you like to schedule a visit to talk about your back pain?
+
+[PATIENT]: Yeah. I guess. But can we just clarify a bit more about the appointment? Like, how long will it take and you tell me who I would be seeing? I really think I need someone who understands back issues specifically.
+
+------------------------------------------------------------
+AUTO-DETECTED BUGS:
+
+  [MEDIUM] Excessive Identity Verification
+  Agent asks for identity verification (name, DOB, phone) 4+ times before addressing the patient's actual question
+  Evidence: Pattern detected 4 times across the conversation
+
+  [MEDIUM] No Alternative Timeframe
+  Agent says cannot check availability or find record without offering alternatives
+  Evidence: I can't pull up your record right now. But I wanna make sure you get help for your backache. I'll connect you to our clinic support team so they can assist you further. Please stay on the line.
+
+  [MEDIUM] Patient Record Not Found — No Recovery
+  Agent cannot find patient record and does not offer to create one or proceed without it
+  Evidence: I can't pull up your record right now. But I wanna make sure you get help for your backache. I'll connect you to our clinic support team so they can assist you further. Please stay on the line.
+
+  [MEDIUM] No Symptom Clarification
+  Patient mentions symptoms but agent declines to ask clarifying questions (duration, severity, location)
+  Evidence: Patient mentioned symptoms but agent never asked clarifying questions
+

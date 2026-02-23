@@ -1,19 +1,18 @@
-from fastapi import FastAPI, APIRouter, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, APIRouter, Request, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import re
+import random
+import requests as http_requests
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
+import asyncio
 from datetime import datetime, timezone
-from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse
-import google.generativeai as genai
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -23,40 +22,23 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Twilio configuration
-TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+# Vapi configuration
+VAPI_API_KEY = os.environ.get('VAPI_API_KEY')
+VAPI_PHONE_NUMBER_ID = os.environ.get('VAPI_PHONE_NUMBER_ID')
+VAPI_BASE_URL = "https://api.vapi.ai"
 
-# Target number for testing
 TARGET_NUMBER = "+18054398008"
 
-# Initialize Twilio client
-twilio_client = None
-if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
-    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-# Initialize Gemini client
-gemini_model = None
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-
-# Create the main app
 app = FastAPI(title="PGA Voice Bot - Patient Simulator")
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Updated Patient Scenarios based on real testing
+# Patient Scenarios
 PATIENT_SCENARIOS = [
     {
         "name": "Availability Timeout Probe",
@@ -144,12 +126,11 @@ PATIENT_SCENARIOS = [
     }
 ]
 
-# Bug pattern detection rules
 BUG_PATTERNS = [
     {
         "id": "infinite_hold_loop",
         "name": "Infinite Hold Loop",
-        "pattern": r"please hold|one moment|checking|let me look",
+        "pattern": r"please hold|one moment|checking|let me look|let me check|1 moment",
         "threshold": 3,
         "severity": "critical",
         "description": "Agent says 'please hold' or similar more than 3 times in a row without providing results"
@@ -157,8 +138,8 @@ BUG_PATTERNS = [
     {
         "id": "documented_no_ticket",
         "name": "Documented Without Reference",
-        "pattern": r"i'?ve documented|documented (your|the|this)|noted (your|the|this)|recorded",
-        "requires_missing": r"ticket|reference|number|tracking|confirmation|case",
+        "pattern": r"i'?ve documented|documented (your|the|this)|noted (your|the|this)|recorded|i'?ll document",
+        "requires_missing": r"ticket|reference|number|tracking|confirmation|case|id",
         "severity": "high",
         "description": "Agent claims to have documented an issue but provides no reference/ticket number"
     },
@@ -172,18 +153,50 @@ BUG_PATTERNS = [
     {
         "id": "no_alternative_offered",
         "name": "No Alternative Timeframe",
-        "pattern": r"(cannot|can't|unable to) (check|see|view|access) availability",
-        "requires_missing": r"(alternative|another|different|try|later|call back|tomorrow)",
+        "pattern": r"(cannot|can't|unable to|can not) (check|see|view|access|find|pull up|look up) (availability|your|the|patient)",
+        "requires_missing": r"(alternative|another|different|try|later|call back|tomorrow|next|new patient|create)",
         "severity": "medium",
-        "description": "Agent says cannot check availability without offering alternatives"
+        "description": "Agent says cannot check availability or find record without offering alternatives"
     },
     {
         "id": "technical_error_no_escalation",
         "name": "Technical Error Without Escalation",
-        "pattern": r"technical (issue|error|problem|difficult)|system (issue|error|problem)|experiencing (issue|difficult)",
-        "requires_missing": r"(human|agent|representative|someone|person|supervisor|manager|call back)",
+        "pattern": r"technical (issue|error|problem|difficult)|system (issue|error|problem)|experiencing (issue|difficult)|something'?s not right|unable to (submit|process|complete)|can'?t proceed",
+        "requires_missing": r"(human|representative|supervisor|manager|direct.*(number|line|phone)|email|office.*(number|phone))",
         "severity": "high",
-        "description": "Agent mentions technical error without offering human escalation"
+        "description": "Agent mentions technical error without offering a concrete human escalation path (phone number, email, etc.)"
+    },
+    {
+        "id": "live_transfer_unavailable",
+        "name": "Failed Escalation — No Alternative Given",
+        "pattern": r"live transfer.*(not|isn'?t|unavailable|can'?t)|transfer.*(not available|unavailable|isn'?t available)",
+        "requires_missing": r"(phone|number|email|address|call.*(us|back|directly|office)|direct)",
+        "severity": "high",
+        "description": "Agent says live transfer is unavailable but does not provide an alternative contact method (phone number, email, etc.)"
+    },
+    {
+        "id": "record_lookup_failure",
+        "name": "Patient Record Not Found — No Recovery",
+        "pattern": r"(can'?t|cannot|unable to|couldn'?t) (find|pull up|access|locate|look up|retrieve).*(record|account|file|information|patient)|record.*(not found|doesn'?t exist)|trouble (pulling|verifying|finding)",
+        "requires_missing": r"(new patient|create|register|sign.?up|walk.?in|manual)",
+        "severity": "medium",
+        "description": "Agent cannot find patient record and does not offer to create one or proceed without it"
+    },
+    {
+        "id": "identity_loop",
+        "name": "Excessive Identity Verification",
+        "pattern": r"spell.*(name|first|last)|confirm.*(name|phone|number|date|birth)|provide.*(phone|number|date|birth)|your (phone|date of birth)",
+        "threshold": 4,
+        "severity": "medium",
+        "description": "Agent asks for identity verification (name, DOB, phone) 4+ times before addressing the patient's actual question"
+    },
+    {
+        "id": "no_symptom_triage",
+        "name": "No Symptom Clarification",
+        "pattern": r"i'?m not able to give medical advice|i can'?t (provide|give|offer) medical advice",
+        "check_context": "symptom_mentioned",
+        "severity": "medium",
+        "description": "Patient mentions symptoms but agent declines to ask clarifying questions (duration, severity, location)"
     }
 ]
 
@@ -206,14 +219,14 @@ class Call(BaseModel):
     auto_detected_bugs: List[dict] = []
 
 class TranscriptEntry(BaseModel):
-    speaker: str  # "patient" or "agent"
+    speaker: str
     text: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class BugReportCreate(BaseModel):
     call_id: str
     bug_description: str
-    severity: str  # "critical", "high", "medium", "low"
+    severity: str
     timestamp_in_call: Optional[str] = None
     details: str
     recommendation: Optional[str] = None
@@ -231,78 +244,11 @@ class BugReport(BaseModel):
     auto_detected: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# In-memory conversation state (for active calls)
-active_conversations = {}
 
-def detect_bugs_in_response(agent_response: str, conversation_history: List[dict]) -> List[dict]:
-    """Automatically detect bug patterns in agent responses"""
-    detected_bugs = []
-    agent_response_lower = agent_response.lower()
-    
-    for pattern_rule in BUG_PATTERNS:
-        pattern = pattern_rule["pattern"]
-        
-        # Check if pattern matches
-        if re.search(pattern, agent_response_lower, re.IGNORECASE):
-            # Check for threshold-based patterns (like hold loop)
-            if "threshold" in pattern_rule:
-                # Count recent occurrences
-                recent_agent_messages = [
-                    h["text"].lower() for h in conversation_history[-10:] 
-                    if h["speaker"] == "agent"
-                ]
-                count = sum(1 for msg in recent_agent_messages if re.search(pattern, msg, re.IGNORECASE))
-                
-                if count >= pattern_rule["threshold"]:
-                    detected_bugs.append({
-                        "pattern_id": pattern_rule["id"],
-                        "name": pattern_rule["name"],
-                        "severity": pattern_rule["severity"],
-                        "description": pattern_rule["description"],
-                        "evidence": f"Pattern detected {count} times in recent messages"
-                    })
-            
-            # Check for patterns that require something to be missing
-            elif "requires_missing" in pattern_rule:
-                missing_pattern = pattern_rule["requires_missing"]
-                if not re.search(missing_pattern, agent_response_lower, re.IGNORECASE):
-                    detected_bugs.append({
-                        "pattern_id": pattern_rule["id"],
-                        "name": pattern_rule["name"],
-                        "severity": pattern_rule["severity"],
-                        "description": pattern_rule["description"],
-                        "evidence": agent_response[:200]
-                    })
-            
-            # Simple pattern match
-            else:
-                detected_bugs.append({
-                    "pattern_id": pattern_rule["id"],
-                    "name": pattern_rule["name"],
-                    "severity": pattern_rule["severity"],
-                    "description": pattern_rule["description"],
-                    "evidence": agent_response[:200]
-                })
-    
-    return detected_bugs
-
-def get_patient_response(call_id: str, agent_message: str) -> str:
-    """Generate patient response using Gemini"""
-    if not gemini_model:
-        return "I understand. Thank you."
-    
-    conv = active_conversations.get(call_id, {})
-    scenario = conv.get("scenario", PATIENT_SCENARIOS[0])
-    history = conv.get("history", [])
-    
-    # Build conversation history for context
-    history_text = "\n".join([f"{h['speaker'].upper()}: {h['text']}" for h in history[-15:]])
-    
-    # Count holds and detect patterns
-    hold_count = sum(1 for h in history if h["speaker"] == "agent" and 
-                     re.search(r"please hold|one moment|checking|let me look", h["text"].lower()))
-    
-    prompt = f"""You are simulating a patient calling a medical office AI agent for quality testing purposes.
+def build_system_prompt(scenario: dict) -> str:
+    """Build the Vapi assistant system prompt from a scenario."""
+    return f"""You are simulating a patient calling a medical office AI agent for quality testing purposes.
+You are on a live phone call. Speak naturally as a real patient would.
 
 YOUR PERSONA:
 {scenario['persona']}
@@ -317,15 +263,11 @@ CONVERSATION STYLE - BE REALISTIC:
 - Use natural speech patterns with occasional hesitations: "um", "uh", "let me think...", "hmm"
 - Don't accept vague answers - push for specifics
 - If agent fails or gives incomplete info, politely push back: "but you mentioned earlier that...", "I'm confused because...", "that doesn't quite answer my question..."
-- Stay patient during holds - count them mentally but don't complain until it's excessive
+- Stay patient during holds - count them mentally but don't complain until it's excessive (3+ times)
+- If the agent says "please hold" or similar more than 3 times, gently check in: "Is everything okay? I've been holding for a bit"
+- If the agent says "please hold" more than 6 times, express concern: "I've been on hold quite a while now. Is there an issue with the system?"
 - Ask follow-up questions when answers are incomplete
 - If something seems wrong (like booking a Sunday appointment), confirm it: "Just to confirm, you're booking me for Sunday? Is the office open on Sundays?"
-
-HOLD STATUS: Agent has said "please hold" or similar {hold_count} times so far.
-- If hold_count < 3: Stay patient, say "Sure, I'll hold" or "No problem, take your time"
-- If hold_count >= 3 and < 6: Gently check in: "Is everything okay? I've been holding for a bit"
-- If hold_count >= 6: Express concern: "I've been on hold quite a while now. Is there an issue with the system?"
-- If hold_count >= 9: "This seems to be taking very long. Maybe there's a technical issue? Should I call back or is there someone else who can help?"
 
 CRITICAL PROBING BEHAVIOR:
 After each agent response, evaluate:
@@ -336,241 +278,155 @@ After each agent response, evaluate:
 
 DO NOT just accept the first answer and move on. Probe, verify, and push for completeness.
 
-Previous conversation:
-{history_text}
+Keep the conversation going until you have thoroughly tested your goal, then politely end the call."""
 
-The agent just said: "{agent_message}"
 
-Respond as the patient would. Be natural, realistic, and probe for issues. Just give the patient's spoken response, no labels or prefixes."""
+def detect_bugs_in_response(agent_response: str, conversation_history: List[dict]) -> List[dict]:
+    """Automatically detect bug patterns in agent responses"""
+    detected_bugs = []
+    agent_response_lower = agent_response.lower()
 
-    try:
-        response = gemini_model.generate_content(prompt)
-        return response.text.strip()
-    except Exception as e:
-        logger.error(f"Error generating patient response: {e}")
-        return "I see, um, thank you."
+    for pattern_rule in BUG_PATTERNS:
+        pattern = pattern_rule["pattern"]
 
-# API Routes
+        if re.search(pattern, agent_response_lower, re.IGNORECASE):
+            if "threshold" in pattern_rule:
+                agent_messages = [
+                    h["text"].lower() for h in conversation_history
+                    if h["speaker"] == "agent"
+                ]
+                count = sum(1 for msg in agent_messages if re.search(pattern, msg, re.IGNORECASE))
+
+                if count >= pattern_rule["threshold"]:
+                    detected_bugs.append({
+                        "pattern_id": pattern_rule["id"],
+                        "name": pattern_rule["name"],
+                        "severity": pattern_rule["severity"],
+                        "description": pattern_rule["description"],
+                        "evidence": f"Pattern detected {count} times across the conversation"
+                    })
+
+            elif "check_context" in pattern_rule:
+                if pattern_rule["check_context"] == "symptom_mentioned":
+                    patient_text = " ".join(
+                        h["text"].lower() for h in conversation_history
+                        if h["speaker"] == "patient"
+                    )
+                    symptom_words = r"(pain|ache|hurt|sore|swollen|numb|tingling|stiff|symptom|discomfort|uncomfortable)"
+                    triage_words = r"(how long|when did|where exactly|scale of|severity|describe|location|how often|duration)"
+                    agent_text_all = " ".join(
+                        h["text"].lower() for h in conversation_history
+                        if h["speaker"] == "agent"
+                    )
+                    if re.search(symptom_words, patient_text) and not re.search(triage_words, agent_text_all):
+                        detected_bugs.append({
+                            "pattern_id": pattern_rule["id"],
+                            "name": pattern_rule["name"],
+                            "severity": pattern_rule["severity"],
+                            "description": pattern_rule["description"],
+                            "evidence": f"Patient mentioned symptoms but agent never asked clarifying questions"
+                        })
+
+            elif "requires_missing" in pattern_rule:
+                missing_pattern = pattern_rule["requires_missing"]
+                all_agent_text = " ".join(
+                    h["text"].lower() for h in conversation_history
+                    if h["speaker"] == "agent"
+                )
+                if not re.search(missing_pattern, all_agent_text, re.IGNORECASE):
+                    detected_bugs.append({
+                        "pattern_id": pattern_rule["id"],
+                        "name": pattern_rule["name"],
+                        "severity": pattern_rule["severity"],
+                        "description": pattern_rule["description"],
+                        "evidence": agent_response[:200]
+                    })
+
+            else:
+                detected_bugs.append({
+                    "pattern_id": pattern_rule["id"],
+                    "name": pattern_rule["name"],
+                    "severity": pattern_rule["severity"],
+                    "description": pattern_rule["description"],
+                    "evidence": agent_response[:200]
+                })
+
+    return detected_bugs
+
+
+def run_bug_detection_on_transcript(transcript: List[dict]) -> List[dict]:
+    """Run bug detection across the full transcript after a call ends."""
+    all_bugs = []
+    seen_pattern_ids = set()
+
+    for i, entry in enumerate(transcript):
+        if entry["speaker"] != "agent":
+            continue
+        history_up_to_here = transcript[:i + 1]
+        bugs = detect_bugs_in_response(entry["text"], history_up_to_here)
+        for bug in bugs:
+            if bug["pattern_id"] not in seen_pattern_ids:
+                seen_pattern_ids.add(bug["pattern_id"])
+                all_bugs.append(bug)
+
+    return all_bugs
+
+
+# ─── API Routes ───
+
 @api_router.get("/")
 async def root():
     return {"message": "PGA Voice Bot API", "status": "running"}
 
 @api_router.get("/scenarios")
 async def get_scenarios():
-    """Get all available patient scenarios"""
     return {"scenarios": PATIENT_SCENARIOS}
 
 @api_router.get("/bug-patterns")
 async def get_bug_patterns():
-    """Get all auto-detection bug patterns"""
     return {"patterns": BUG_PATTERNS}
 
-@api_router.post("/call")
-async def initiate_call(call_data: CallCreate):
-    """Initiate a call to the test number"""
-    if not twilio_client:
-        raise HTTPException(status_code=500, detail="Twilio not configured. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER")
-    
-    # Select scenario
-    scenario = None
-    if call_data.scenario_name:
-        for s in PATIENT_SCENARIOS:
-            if s["name"] == call_data.scenario_name:
-                scenario = s
-                break
-    if not scenario:
-        import random
-        scenario = random.choice(PATIENT_SCENARIOS)
-    
-    # Create call record
-    call_record = Call(
-        scenario_name=scenario["name"],
-        persona=scenario["persona"],
-        goal=scenario["goal"]
-    )
-    
-    # Store in active conversations
-    active_conversations[call_record.id] = {
-        "scenario": scenario,
-        "history": [],
-        "call_record": call_record.model_dump(),
-        "hold_count": 0
-    }
-    
-    try:
-        # Get the webhook URL from environment or construct it
-        backend_url = os.environ.get('BACKEND_URL', 'https://check-assignment.preview.emergentagent.com')
-        
-        # Create TwiML for the call
-        response = VoiceResponse()
-        gather = response.gather(
-            input='speech',
-            action=f'{backend_url}/api/voice/respond?call_id={call_record.id}',
-            method='POST',
-            timeout=8,
-            speech_timeout='auto',
-            language='en-US'
-        )
-        gather.say(scenario["opening"], voice='Polly.Joanna')
-        
-        # Fallback if no speech detected
-        response.say("Hello? Are you still there?", voice='Polly.Joanna')
-        response.redirect(f'{backend_url}/api/voice/respond?call_id={call_record.id}')
-        
-        # Make the call
-        call = twilio_client.calls.create(
-            from_=TWILIO_PHONE_NUMBER,
-            to=TARGET_NUMBER,
-            twiml=str(response),
-            status_callback=f'{backend_url}/api/voice/status?call_id={call_record.id}',
-            status_callback_event=['initiated', 'ringing', 'answered', 'completed']
-        )
-        
-        call_record.call_sid = call.sid
-        active_conversations[call_record.id]["call_record"]["call_sid"] = call.sid
-        
-        # Store initial transcript
-        active_conversations[call_record.id]["history"].append({
-            "speaker": "patient",
-            "text": scenario["opening"],
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        
-        # Save to database
-        doc = call_record.model_dump()
-        doc['started_at'] = doc['started_at'].isoformat()
-        if doc.get('ended_at'):
-            doc['ended_at'] = doc['ended_at'].isoformat()
-        await db.calls.insert_one(doc)
-        
-        logger.info(f"Call initiated: {call.sid} for scenario: {scenario['name']}")
-        
-        return {
-            "status": "success",
-            "call_id": call_record.id,
-            "call_sid": call.sid,
-            "scenario": scenario["name"],
-            "message": f"Call initiated to {TARGET_NUMBER}"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error initiating call: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def poll_and_save_transcript(call_id: str, vapi_call_id: str):
+    """Background task: poll Vapi until call ends, then save transcript."""
+    await asyncio.sleep(30)
+    for _ in range(24):  # up to ~4 minutes
+        try:
+            response = http_requests.get(
+                f"{VAPI_BASE_URL}/call/{vapi_call_id}",
+                headers={"Authorization": f"Bearer {VAPI_API_KEY}"},
+                timeout=15
+            )
+            vapi_data = response.json()
+            status = vapi_data.get("status")
 
-@api_router.post("/voice/respond")
-async def voice_respond(request: Request, call_id: str = None):
-    """Handle Twilio voice webhook - process agent speech and generate patient response"""
-    form_data = await request.form()
-    speech_result = form_data.get('SpeechResult', '')
-    
-    logger.info(f"Agent said: {speech_result} for call {call_id}")
-    
-    response = VoiceResponse()
-    
-    if call_id and call_id in active_conversations:
-        conv = active_conversations[call_id]
-        
-        # Store agent's response
-        if speech_result:
-            conv["history"].append({
-                "speaker": "agent",
-                "text": speech_result,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            # Auto-detect bugs in agent response
-            detected_bugs = detect_bugs_in_response(speech_result, conv["history"])
-            if detected_bugs:
-                for bug in detected_bugs:
-                    conv["call_record"].setdefault("auto_detected_bugs", []).append(bug)
-                    logger.info(f"Auto-detected bug: {bug['name']} in call {call_id}")
-            
-            # Update database with transcript and detected bugs
-            await db.calls.update_one(
-                {"id": call_id},
-                {
-                    "$push": {"transcript": {
-                        "speaker": "agent",
-                        "text": speech_result,
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }},
-                    "$set": {"auto_detected_bugs": conv["call_record"].get("auto_detected_bugs", [])}
+            if status == "ended":
+                transcript = []
+                messages = vapi_data.get("artifact", {}).get("messages", [])
+                for msg in messages:
+                    role = msg.get("role", "")
+                    text = msg.get("message", "") or msg.get("content", "")
+                    if not text or role not in ("bot", "assistant", "user"):
+                        continue
+                    transcript.append({
+                        "speaker": "patient" if role in ("bot", "assistant") else "agent",
+                        "text": text,
+                        "timestamp": msg.get("time", "")
+                    })
+
+                detected_bugs = run_bug_detection_on_transcript(transcript)
+
+                raw_transcript = vapi_data.get("artifact", {}).get("transcript", "")
+
+                update_data = {
+                    "transcript": transcript,
+                    "status": "completed",
+                    "auto_detected_bugs": detected_bugs,
+                    "raw_transcript": raw_transcript,
+                    "ended_at": datetime.now(timezone.utc).isoformat(),
                 }
-            )
-        
-        # Generate patient response
-        patient_response = get_patient_response(call_id, speech_result)
-        
-        # Store patient response
-        conv["history"].append({
-            "speaker": "patient",
-            "text": patient_response,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        
-        # Update database
-        await db.calls.update_one(
-            {"id": call_id},
-            {"$push": {"transcript": {
-                "speaker": "patient",
-                "text": patient_response,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }}}
-        )
-        
-        # Check conversation length - end after reasonable exchange (longer for patience testing)
-        if len(conv["history"]) > 30:
-            response.say("Thank you so much for your help. I think I have what I need. Goodbye!", voice='Polly.Joanna')
-            response.hangup()
-        else:
-            backend_url = os.environ.get('BACKEND_URL', 'https://check-assignment.preview.emergentagent.com')
-            gather = response.gather(
-                input='speech',
-                action=f'{backend_url}/api/voice/respond?call_id={call_id}',
-                method='POST',
-                timeout=10,
-                speech_timeout='auto',
-                language='en-US'
-            )
-            gather.say(patient_response, voice='Polly.Joanna')
-            
-            # Longer timeout for hold scenarios
-            gather.pause(length=3)
-            
-            # Fallback - stay on line
-            response.say("I'm still here, just waiting.", voice='Polly.Joanna')
-            response.redirect(f'{backend_url}/api/voice/respond?call_id={call_id}')
-    else:
-        response.say("Thank you for calling. Goodbye.", voice='Polly.Joanna')
-        response.hangup()
-    
-    return HTMLResponse(content=str(response), media_type="application/xml")
+                await db.calls.update_one({"id": call_id}, {"$set": update_data})
 
-@api_router.post("/voice/status")
-async def voice_status(request: Request, call_id: str = None):
-    """Handle call status updates"""
-    form_data = await request.form()
-    call_status = form_data.get('CallStatus', '')
-    call_duration = form_data.get('CallDuration', '0')
-    
-    logger.info(f"Call {call_id} status: {call_status}, duration: {call_duration}s")
-    
-    if call_id:
-        # Update call record
-        update_data = {"status": call_status}
-        
-        if call_status == 'completed':
-            update_data["ended_at"] = datetime.now(timezone.utc).isoformat()
-            update_data["duration_seconds"] = int(call_duration)
-            
-            # Save final transcript and auto-create bug reports for detected issues
-            if call_id in active_conversations:
-                conv = active_conversations[call_id]
-                update_data["transcript"] = conv["history"]
-                update_data["auto_detected_bugs"] = conv["call_record"].get("auto_detected_bugs", [])
-                
-                # Auto-create bug reports for detected issues
-                for bug in conv["call_record"].get("auto_detected_bugs", []):
+                for bug in detected_bugs:
                     bug_report = BugReport(
                         call_id=call_id,
                         bug_description=bug["name"],
@@ -579,28 +435,243 @@ async def voice_status(request: Request, call_id: str = None):
                         auto_detected=True
                     )
                     doc = bug_report.model_dump()
-                    doc['created_at'] = doc['created_at'].isoformat()
+                    doc["created_at"] = doc["created_at"].isoformat()
                     await db.bugs.insert_one(doc)
-                
-                # Clean up active conversation
-                del active_conversations[call_id]
-        
-        await db.calls.update_one(
-            {"id": call_id},
-            {"$set": update_data}
+
+                logger.info(
+                    f"Poller: transcript saved for call {call_id} — "
+                    f"{len(transcript)} messages, {len(detected_bugs)} bugs"
+                )
+                return
+
+        except Exception as e:
+            logger.error(f"Poller error for call {call_id}: {e}")
+
+        await asyncio.sleep(10)
+
+    logger.warning(f"Poller: timed out waiting for call {call_id} to end")
+
+
+@api_router.post("/call")
+async def initiate_call(call_data: CallCreate):
+    """Initiate a call via Vapi"""
+    if not VAPI_API_KEY or not VAPI_PHONE_NUMBER_ID:
+        raise HTTPException(
+            status_code=500,
+            detail="Vapi not configured. Please set VAPI_API_KEY and VAPI_PHONE_NUMBER_ID"
         )
-    
+
+    scenario = None
+    if call_data.scenario_name:
+        for s in PATIENT_SCENARIOS:
+            if s["name"] == call_data.scenario_name:
+                scenario = s
+                break
+    if not scenario:
+        scenario = random.choice(PATIENT_SCENARIOS)
+
+    call_record = Call(
+        scenario_name=scenario["name"],
+        persona=scenario["persona"],
+        goal=scenario["goal"]
+    )
+
+    backend_url = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+    system_prompt = build_system_prompt(scenario)
+
+    vapi_payload = {
+        "assistant": {
+            "firstMessage": scenario["opening"],
+            "model": {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": system_prompt}
+                ]
+            },
+            "voice": {
+                "provider": "openai",
+                "voiceId": "alloy"
+            },
+            "server": {
+                "url": f"{backend_url}/api/vapi/webhook"
+            },
+            "serverMessages": ["end-of-call-report"],
+            "endCallMessage": "Thank you so much for your help. I think I have what I need. Goodbye!",
+            "maxDurationSeconds": 180,
+            "metadata": {
+                "call_id": call_record.id,
+                "scenario_name": scenario["name"]
+            }
+        },
+        "phoneNumberId": VAPI_PHONE_NUMBER_ID,
+        "customer": {
+            "number": TARGET_NUMBER
+        }
+    }
+
+    try:
+        response = http_requests.post(
+            f"{VAPI_BASE_URL}/call/phone",
+            headers={
+                "Authorization": f"Bearer {VAPI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json=vapi_payload,
+            timeout=15
+        )
+
+        if response.status_code != 201:
+            logger.error(f"Vapi API error: {response.status_code} - {response.text}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Vapi API error: {response.text}"
+            )
+
+        vapi_response = response.json()
+        vapi_call_id = vapi_response.get("id", "")
+        call_record.call_sid = vapi_call_id
+
+        doc = call_record.model_dump()
+        doc['started_at'] = doc['started_at'].isoformat()
+        if doc.get('ended_at'):
+            doc['ended_at'] = doc['ended_at'].isoformat()
+        doc['vapi_call_id'] = vapi_call_id
+        await db.calls.insert_one(doc)
+
+        logger.info(f"Vapi call initiated: {vapi_call_id} for scenario: {scenario['name']}")
+
+        asyncio.create_task(poll_and_save_transcript(call_record.id, vapi_call_id))
+
+        return {
+            "status": "success",
+            "call_id": call_record.id,
+            "call_sid": vapi_call_id,
+            "scenario": scenario["name"],
+            "message": f"Call initiated to {TARGET_NUMBER} via Vapi"
+        }
+
+    except http_requests.RequestException as e:
+        logger.error(f"Error calling Vapi API: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/vapi/webhook")
+async def vapi_webhook(request: Request):
+    """Handle Vapi server events (end-of-call-report)"""
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"status": "ok"}
+
+    message = payload.get("message", {})
+    message_type = message.get("type", "")
+
+    logger.info(f"Vapi webhook received: {message_type}")
+
+    if message_type == "end-of-call-report":
+        await _handle_end_of_call_report(message)
+
     return {"status": "ok"}
+
+
+async def _handle_end_of_call_report(message: dict):
+    """Process the end-of-call-report from Vapi."""
+    call_obj = message.get("call", {})
+    artifact = message.get("artifact", {})
+    ended_reason = message.get("endedReason", "unknown")
+
+    # Extract our internal call_id from the assistant metadata
+    assistant_meta = call_obj.get("assistant", {}).get("metadata", {})
+    call_id = assistant_meta.get("call_id")
+    vapi_call_id = call_obj.get("id", "")
+
+    if not call_id:
+        # Fallback: try to find by vapi_call_id
+        existing = await db.calls.find_one({"vapi_call_id": vapi_call_id})
+        if existing:
+            call_id = existing.get("id")
+        else:
+            logger.warning(f"Could not find call for Vapi call {vapi_call_id}")
+            return
+
+    # Convert Vapi messages to our transcript format
+    # Vapi roles: "bot" = our patient bot, "user" = the Athena agent being called
+    vapi_messages = artifact.get("messages", [])
+    transcript = []
+    for msg in vapi_messages:
+        role = msg.get("role", "")
+        text = msg.get("message", "") or msg.get("content", "")
+        if not text:
+            continue
+        if role in ("bot", "assistant"):
+            speaker = "patient"
+        elif role == "user":
+            speaker = "agent"
+        else:
+            continue
+        transcript.append({
+            "speaker": speaker,
+            "text": text,
+            "timestamp": msg.get("time", datetime.now(timezone.utc).isoformat())
+        })
+
+    # Run bug detection on the full transcript
+    detected_bugs = run_bug_detection_on_transcript(transcript)
+
+    # Calculate approximate duration from call object
+    started_at = call_obj.get("startedAt")
+    ended_at_str = call_obj.get("endedAt")
+    duration_seconds = None
+    if started_at and ended_at_str:
+        try:
+            start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(ended_at_str.replace("Z", "+00:00"))
+            duration_seconds = int((end_dt - start_dt).total_seconds())
+        except (ValueError, TypeError):
+            pass
+
+    update_data = {
+        "status": "completed",
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "transcript": transcript,
+        "auto_detected_bugs": detected_bugs,
+        "ended_reason": ended_reason,
+    }
+    if duration_seconds is not None:
+        update_data["duration_seconds"] = duration_seconds
+
+    await db.calls.update_one(
+        {"id": call_id},
+        {"$set": update_data}
+    )
+
+    # Auto-create bug reports for detected issues
+    for bug in detected_bugs:
+        bug_report = BugReport(
+            call_id=call_id,
+            bug_description=bug["name"],
+            severity=bug["severity"],
+            details=f"{bug['description']}\n\nEvidence: {bug.get('evidence', 'N/A')}",
+            auto_detected=True
+        )
+        doc = bug_report.model_dump()
+        doc['created_at'] = doc['created_at'].isoformat()
+        await db.bugs.insert_one(doc)
+
+    logger.info(
+        f"Call {call_id} completed: {len(transcript)} messages, "
+        f"{len(detected_bugs)} bugs detected"
+    )
+
 
 @api_router.get("/calls")
 async def get_calls():
-    """Get all call records"""
     calls = await db.calls.find({}, {"_id": 0}).sort("started_at", -1).to_list(100)
     return {"calls": calls}
 
 @api_router.get("/calls/{call_id}")
 async def get_call(call_id: str):
-    """Get a specific call record"""
     call = await db.calls.find_one({"id": call_id}, {"_id": 0})
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
@@ -608,20 +679,110 @@ async def get_call(call_id: str):
 
 @api_router.get("/calls/{call_id}/transcript")
 async def get_transcript(call_id: str):
-    """Get transcript for a specific call"""
-    call = await db.calls.find_one({"id": call_id}, {"_id": 0, "transcript": 1, "scenario_name": 1, "auto_detected_bugs": 1})
+    call = await db.calls.find_one(
+        {"id": call_id},
+        {"_id": 0, "transcript": 1, "scenario_name": 1, "auto_detected_bugs": 1}
+    )
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
     return {
-        "call_id": call_id, 
-        "scenario": call.get("scenario_name"), 
+        "call_id": call_id,
+        "scenario": call.get("scenario_name"),
         "transcript": call.get("transcript", []),
         "auto_detected_bugs": call.get("auto_detected_bugs", [])
     }
 
+
+@api_router.post("/rerun-bug-detection")
+async def rerun_bug_detection():
+    """Re-run bug detection on all existing calls with the latest patterns."""
+    calls = await db.calls.find({}, {"_id": 0}).to_list(100)
+    updated = 0
+    total_bugs = 0
+    for call in calls:
+        transcript = call.get("transcript", [])
+        if not transcript:
+            continue
+        detected_bugs = run_bug_detection_on_transcript(transcript)
+        await db.calls.update_one(
+            {"id": call["id"]},
+            {"$set": {"auto_detected_bugs": detected_bugs}}
+        )
+        # Remove old auto-detected bugs for this call and insert new ones
+        await db.bugs.delete_many({"call_id": call["id"], "auto_detected": True})
+        for bug in detected_bugs:
+            bug_report = BugReport(
+                call_id=call["id"],
+                bug_description=bug["name"],
+                severity=bug["severity"],
+                details=f"{bug['description']}\n\nEvidence: {bug.get('evidence', 'N/A')}",
+                auto_detected=True
+            )
+            doc = bug_report.model_dump()
+            doc["created_at"] = doc["created_at"].isoformat()
+            await db.bugs.insert_one(doc)
+        updated += 1
+        total_bugs += len(detected_bugs)
+
+    return {
+        "status": "success",
+        "calls_processed": updated,
+        "total_bugs_detected": total_bugs
+    }
+
+
+@api_router.get("/calls/{call_id}/vapi-transcript")
+async def get_vapi_transcript(call_id: str):
+    """Fetch full transcript directly from Vapi API and update MongoDB."""
+    call = await db.calls.find_one({"id": call_id}, {"_id": 0})
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    vapi_call_id = call.get("call_sid") or call.get("vapi_call_id")
+    if not vapi_call_id:
+        raise HTTPException(status_code=404, detail="No Vapi call ID found")
+
+    response = http_requests.get(
+        f"{VAPI_BASE_URL}/call/{vapi_call_id}",
+        headers={"Authorization": f"Bearer {VAPI_API_KEY}"},
+        timeout=15
+    )
+    vapi_data = response.json()
+
+    transcript = []
+    messages = vapi_data.get("artifact", {}).get("messages", [])
+    for msg in messages:
+        role = msg.get("role", "")
+        text = msg.get("message", "") or msg.get("content", "")
+        if not text or role not in ("bot", "assistant", "user"):
+            continue
+        transcript.append({
+            "speaker": "patient" if role in ("bot", "assistant") else "agent",
+            "text": text,
+            "timestamp": msg.get("time", "")
+        })
+
+    raw_transcript = vapi_data.get("artifact", {}).get("transcript", "")
+
+    await db.calls.update_one(
+        {"id": call_id},
+        {"$set": {
+            "transcript": transcript,
+            "status": "completed",
+            "raw_vapi_status": vapi_data.get("status")
+        }}
+    )
+
+    return {
+        "call_id": call_id,
+        "transcript": transcript,
+        "raw_transcript": raw_transcript,
+        "status": vapi_data.get("status")
+    }
+
+
 @api_router.post("/bugs")
 async def create_bug_report(bug: BugReportCreate):
-    """Create a new bug report"""
     bug_record = BugReport(
         call_id=bug.call_id,
         bug_description=bug.bug_description,
@@ -631,22 +792,18 @@ async def create_bug_report(bug: BugReportCreate):
         recommendation=bug.recommendation,
         auto_detected=bug.auto_detected
     )
-    
     doc = bug_record.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.bugs.insert_one(doc)
-    
     return {"status": "success", "bug_id": bug_record.id}
 
 @api_router.get("/bugs")
 async def get_bugs():
-    """Get all bug reports"""
     bugs = await db.bugs.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"bugs": bugs}
 
 @api_router.delete("/bugs/{bug_id}")
 async def delete_bug(bug_id: str):
-    """Delete a bug report"""
     result = await db.bugs.delete_one({"id": bug_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Bug not found")
@@ -654,21 +811,18 @@ async def delete_bug(bug_id: str):
 
 @api_router.get("/config/status")
 async def get_config_status():
-    """Check configuration status"""
     return {
-        "twilio_configured": bool(twilio_client),
-        "gemini_configured": bool(gemini_model),
+        "vapi_configured": bool(VAPI_API_KEY and VAPI_PHONE_NUMBER_ID),
         "target_number": TARGET_NUMBER,
-        "twilio_phone": TWILIO_PHONE_NUMBER if TWILIO_PHONE_NUMBER else "Not configured"
+        "vapi_phone_number_id": VAPI_PHONE_NUMBER_ID if VAPI_PHONE_NUMBER_ID else "Not configured"
     }
 
 @api_router.post("/seed-confirmed-bug")
 async def seed_confirmed_bug():
-    """Seed the confirmed bug from manual testing"""
     existing = await db.bugs.find_one({"bug_description": "Infinite loading loop when checking multiple doctor availability"})
     if existing:
         return {"status": "already_exists", "bug_id": existing.get("id")}
-    
+
     confirmed_bug = BugReport(
         call_id="manual-testing",
         bug_description="Infinite loading loop when checking multiple doctor availability",
@@ -680,14 +834,12 @@ This was discovered during manual testing of the Athena agent. The agent repeate
         recommendation="Implement a timeout after 2-3 hold messages, then offer alternatives: callback option, transfer to human agent, or suggestion to try again later. The system should not loop indefinitely.",
         auto_detected=False
     )
-    
     doc = confirmed_bug.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.bugs.insert_one(doc)
-    
     return {"status": "created", "bug_id": confirmed_bug.id}
 
-# Include the router in the main app
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -700,7 +852,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Seed the confirmed bug on startup"""
     try:
         existing = await db.bugs.find_one({"bug_description": "Infinite loading loop when checking multiple doctor availability"})
         if not existing:
