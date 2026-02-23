@@ -2,6 +2,8 @@
 
 Made By - Prajjwal Mishra
 
+Loom Video - loom.com/share/e23f735cbd21491086e80f269d068b5a
+
 An automated voice bot that calls the Athena AI medical office agent (+1-805-439-8008), simulates realistic patient conversations, records full transcripts, and automatically detects bugs in the agent's responses.
 
 ## Architecture
